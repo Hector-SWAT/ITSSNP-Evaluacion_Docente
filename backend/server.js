@@ -3,14 +3,21 @@
  *  SICOT — Backend API  (Railway-ready)
  *  Node.js + Express + MySQL2
  *
+ *  ─── CONEXIÓN A MYSQL EN RAILWAY ─────────────────────────────
+ *  Usando las mismas credenciales que DBeaver:
+ *  Host: trolley.proxy.rlwy.net
+ *  Port: 19348
+ *  User: root
+ *  Password: cdFLRUidwslSicLWufGKskPbEraFPspX
+ *  Database: railway
+ *
  *  ─── DEPLOY EN RAILWAY ───────────────────────────────────────
  *  1. Sube la carpeta /backend a GitHub
  *  2. Railway → New Project → Deploy from GitHub repo
- *  3. Variables de entorno en Railway (verificar que existan):
- *       MYSQL_URL=mysql://root:cdFLRUidwslSicLWufGKskPbEraFPspX@mysql.railway.internal:3306/railway
+ *  3. Variables de entorno en Railway:
+ *       NODE_ENV=production
  *       JWT_SECRET=sicot_itssnp_2026_secreto
  *       FRONTEND_URL=https://itssnp-evaluacion-docente.vercel.app
- *       NODE_ENV=production
  *
  *  ─── DEV LOCAL ───────────────────────────────────────────────
  *  Crea el archivo .env en la raíz del backend:
@@ -33,7 +40,7 @@ const app  = express()
 const PORT = process.env.PORT || 3001
 
 /* ══════════════════════════════════════════════════════════════
-   CORS — Configuración mejorada con el paquete cors
+   CORS — Configuración para Vercel
 ══════════════════════════════════════════════════════════════ */
 const corsOptions = {
   origin: function (origin, callback) {
@@ -45,7 +52,7 @@ const corsOptions = {
       process.env.FRONTEND_URL
     ].filter(Boolean)
     
-    // Permitir peticiones sin origen (ej: Postman, curl) en desarrollo
+    // Permitir peticiones sin origen (ej: Postman, curl) solo en desarrollo
     if (!origin) {
       if (process.env.NODE_ENV !== 'production') {
         return callback(null, true)
@@ -76,33 +83,28 @@ app.use((req, res, next) => {
 app.use(express.json())
 
 /* ══════════════════════════════════════════════════════════════
-   MYSQL — Conexión a Railway (VERSIÓN CORREGIDA)
+   MYSQL — CONEXIÓN CORREGIDA (igual que DBeaver)
 ══════════════════════════════════════════════════════════════ */
 function getDbConfig() {
-  console.log("🔍 Buscando configuración de MySQL...")
+  console.log("🔍 Configurando conexión a MySQL...")
   
-  // Prioridad 1: Usar MYSQL_URL (formato de Railway en producción)
-  if (process.env.MYSQL_URL) {
-    try {
-      const u = new URL(process.env.MYSQL_URL)
-      console.log("✅ Usando MYSQL_URL")
-      return {
-        host: u.hostname,
-        port: Number(u.port) || 3306,
-        user: decodeURIComponent(u.username),
-        password: decodeURIComponent(u.password),
-        database: u.pathname.slice(1),
-      }
-    } catch (e) {
-      console.error("Error parsing MYSQL_URL:", e.message)
+  // Para producción en Railway - MISMAS CREDENCIALES QUE DBEAVER
+  if (process.env.NODE_ENV === 'production') {
+    console.log("✅ MODO PRODUCCIÓN: Usando proxy público (trolley.proxy.rlwy.net:19348)")
+    return {
+      host: "trolley.proxy.rlwy.net",
+      port: 19348,
+      user: "root",
+      password: "cdFLRUidwslSicLWufGKskPbEraFPspX",
+      database: "railway",
     }
   }
   
-  // Prioridad 2: Usar DATABASE_URL (para desarrollo local)
+  // Para desarrollo local - Usar DATABASE_URL del .env
   if (process.env.DATABASE_URL) {
     try {
       const u = new URL(process.env.DATABASE_URL)
-      console.log("✅ Usando DATABASE_URL")
+      console.log("✅ MODO DESARROLLO: Usando DATABASE_URL")
       return {
         host: u.hostname,
         port: Number(u.port) || 3306,
@@ -115,14 +117,14 @@ function getDbConfig() {
     }
   }
   
-  // Prioridad 3: Usar variables individuales de Railway
-  console.log("✅ Usando variables individuales")
+  // Fallback a localhost (para pruebas locales sin .env)
+  console.log("⚠️ Usando configuración por defecto (localhost)")
   return {
-    host: process.env.MYSQLHOST || process.env.MSQLHOST || process.env.RAILWAY_PRIVATE_DOMAIN || "localhost",
-    port: Number(process.env.MYSQLPORT) || Number(process.env.RAILWAY_TCP_APPLICATION_PORT) || 3306,
-    user: process.env.MYSQLUSER || "root",
-    password: process.env.MYSQLPASSWORD || process.env.MYSQL_ROOT_PASSWORD || "",
-    database: process.env.MYSQL_DATABASE || "railway",
+    host: "localhost",
+    port: 3306,
+    user: "root",
+    password: "",
+    database: "railway",
   }
 }
 
@@ -148,7 +150,7 @@ const pool = mysql.createPool({
   connectTimeout: 10000,
   charset: "utf8mb4",
   ssl: {
-    rejectUnauthorized: false // Necesario para Railway
+    rejectUnauthorized: false // Importante para conexiones externas
   }
 })
 
@@ -158,9 +160,12 @@ const pool = mysql.createPool({
   while (retries > 0) {
     try {
       const conn = await pool.getConnection()
-      console.log("✅ MySQL conectado exitosamente!")
-      console.log(`   Base de datos: ${dbCfg.database}`)
+      console.log("=======================================")
+      console.log("✅ ¡CONEXIÓN EXITOSA A MYSQL!")
       console.log(`   Host: ${dbCfg.host}:${dbCfg.port}`)
+      console.log(`   Base de datos: ${dbCfg.database}`)
+      console.log(`   Usuario: ${dbCfg.user}`)
+      console.log("=======================================")
       conn.release()
       break
     } catch (err) {
@@ -178,17 +183,19 @@ const pool = mysql.createPool({
 })()
 
 /* ══════════════════════════════════════════════════════════════
-   HEALTH CHECK — SIMPLIFICADO PARA RAILWAY
+   HEALTH CHECKS
 ══════════════════════════════════════════════════════════════ */
 app.get("/", (_req, res) => {
   res.json({ 
     app: "SICOT API", 
     status: "ok",
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    db_host: dbCfg.host,
+    db_port: dbCfg.port
   })
 })
 
-// Health check simple que SIEMPRE responde rápido (para Railway)
+// Health check simple para Railway (siempre responde)
 app.get("/health", (req, res) => {
   res.status(200).json({ 
     status: "healthy", 
@@ -197,7 +204,7 @@ app.get("/health", (req, res) => {
   })
 })
 
-// Health check detallado (opcional, con verificación de BD)
+// Health check detallado con verificación de BD
 app.get("/health/detailed", async (_req, res) => {
   try {
     const [result] = await pool.query('SELECT 1 as healthCheck')
@@ -205,23 +212,28 @@ app.get("/health/detailed", async (_req, res) => {
       status: "ok", 
       timestamp: new Date(),
       database: "connected",
+      db_host: dbCfg.host,
+      db_port: dbCfg.port,
       uptime: process.uptime()
     })
   } catch (err) {
     res.status(500).json({ 
       status: "error", 
       database: "disconnected",
-      error: err.message 
+      error: err.message,
+      db_host: dbCfg.host,
+      db_port: dbCfg.port
     })
   }
 })
 
-// Endpoint de diagnóstico de BD (temporal, para debugging)
+// Endpoint de prueba de BD (como en DBeaver)
 app.get("/api/db-test", async (req, res) => {
   try {
     const [result] = await pool.query('SELECT NOW() as time, DATABASE() as db, USER() as user')
     res.json({
       success: true,
+      message: "✅ Conexión a MySQL exitosa",
       connection: {
         host: dbCfg.host,
         port: dbCfg.port,
@@ -233,6 +245,7 @@ app.get("/api/db-test", async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
+      message: "❌ Error de conexión a MySQL",
       error: err.message,
       config: {
         host: dbCfg.host,
@@ -749,17 +762,23 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
 })
 
 /* ══════════════════════════════════════════════════════════════
-   ARRANCAR — CORREGIDO PARA RAILWAY
+   ARRANCAR SERVIDOR
 ══════════════════════════════════════════════════════════════ */
 app.listen(PORT, '0.0.0.0', () => {
-  console.log("===================================")
-  console.log(`🚀  SICOT API corriendo`)
-  console.log(`🌐  Puerto: ${PORT} (0.0.0.0)`)
-  console.log(`📡  Entorno: ${process.env.NODE_ENV || 'development'}`)
-  console.log(`🗄️  DB Host: ${dbCfg.host}:${dbCfg.port}`)
-  console.log(`🗄️  DB Name: ${dbCfg.database}`)
-  console.log(`✅  Health check: /health (para Railway)`)
-  console.log(`📊  Health detallado: /health/detailed`)
-  console.log(`🔧  DB Test: /api/db-test`)
-  console.log("===================================")
+  console.log("=======================================")
+  console.log("🚀 SICOT API CORRIENDO")
+  console.log("=======================================")
+  console.log(`🌐 Puerto: ${PORT} (0.0.0.0)`)
+  console.log(`📡 Entorno: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`🗄️  Base de datos MySQL:`)
+  console.log(`   Host: ${dbCfg.host}`)
+  console.log(`   Puerto: ${dbCfg.port}`)
+  console.log(`   Base de datos: ${dbCfg.database}`)
+  console.log(`   Usuario: ${dbCfg.user}`)
+  console.log("=======================================")
+  console.log("✅ Endpoints disponibles:")
+  console.log(`   📊 Health check: /health`)
+  console.log(`   🔧 DB Test: /api/db-test`)
+  console.log(`   🔐 Login: /api/auth/login`)
+  console.log("=======================================")
 })

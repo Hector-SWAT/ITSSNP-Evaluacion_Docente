@@ -18,9 +18,14 @@ async function request(method, endpoint, body = null) {
   let token = localStorage.getItem("sicot_token") || localStorage.getItem("token")
   
   console.log(`📡 ${method} ${endpoint} - Token:`, token ? '✅ Presente' : '❌ No hay token')
+  if (token) {
+    console.log(`📡 Token (primeros 20): ${token.substring(0, 20)}...`)
+  }
 
   const headers = { "Content-Type": "application/json" }
-  if (token) headers["Authorization"] = `Bearer ${token}`
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
 
   const options = { method, headers }
   if (body) options.body = JSON.stringify(body)
@@ -30,13 +35,16 @@ async function request(method, endpoint, body = null) {
 
     // Si el token expiró, limpiar sesión
     if (res.status === 401) {
-      console.warn("⚠️ Token expirado o inválido")
+      console.warn("⚠️ Token expirado o inválido - Status 401")
+      const errorData = await res.json().catch(() => ({}))
+      console.warn("⚠️ Mensaje del servidor:", errorData)
+      
       localStorage.removeItem("sicot_user")
       localStorage.removeItem("sicot_token")
       localStorage.removeItem("token")
       localStorage.removeItem("user")
-      // No redirigimos automáticamente, dejamos que el componente maneje el error
-      throw new Error("Sesión expirada")
+      
+      throw new Error(errorData.error || "Sesión expirada")
     }
 
     const data = await res.json()
@@ -71,6 +79,7 @@ export async function login(usuario, password) {
       localStorage.setItem("sicot_token", data.token)
       localStorage.setItem("token", data.token)
       console.log("✅ Token guardado correctamente")
+      console.log("✅ Token length:", data.token.length)
     }
     
     return data

@@ -6,11 +6,11 @@
  *  ─── DEPLOY EN RAILWAY ───────────────────────────────────────
  *  1. Sube la carpeta /backend a GitHub
  *  2. Railway → New Project → Deploy from GitHub repo
- *  3. Variables de entorno en Railway:
- *       DATABASE_URL  = mysql://root:cdFLRUidwslSicLWufGKskPbEraFPspX@trolley.proxy.rlwy.net:19348/railway
- *       JWT_SECRET    = sicot_itssnp_2026_secreto
- *       FRONTEND_URL  = https://itssnp-evaluacion-docente.vercel.app
- *       NODE_ENV      = production
+ *  3. Variables de entorno en Railway (verificar que existan):
+ *       MYSQL_URL=mysql://root:cdFLRUidwslSicLWufGKskPbEraFPspX@mysql.railway.internal:3306/railway
+ *       JWT_SECRET=sicot_itssnp_2026_secreto
+ *       FRONTEND_URL=https://itssnp-evaluacion-docente.vercel.app
+ *       NODE_ENV=production
  *
  *  ─── DEV LOCAL ───────────────────────────────────────────────
  *  Crea el archivo .env en la raíz del backend:
@@ -67,7 +67,7 @@ const corsOptions = {
 // Aplicar CORS a todas las rutas
 app.use(cors(corsOptions))
 
-// Middleware para logging de peticiones (útil para debugging)
+// Middleware para logging de peticiones
 app.use((req, res, next) => {
   console.log(`📡 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'sin origen'}`)
   next()
@@ -76,51 +76,104 @@ app.use((req, res, next) => {
 app.use(express.json())
 
 /* ══════════════════════════════════════════════════════════════
-   MYSQL — Conexión a Railway via DATABASE_URL
+   MYSQL — Conexión a Railway (VERSIÓN CORREGIDA)
 ══════════════════════════════════════════════════════════════ */
-function parseDbUrl(url) {
-  try {
-    const u = new URL(url)
-    return {
-      host:     u.hostname,
-      port:     Number(u.port) || 3306,
-      user:     decodeURIComponent(u.username),
-      password: decodeURIComponent(u.password),
-      database: u.pathname.slice(1),
+function getDbConfig() {
+  console.log("🔍 Buscando configuración de MySQL...")
+  
+  // Prioridad 1: Usar MYSQL_URL (formato de Railway en producción)
+  if (process.env.MYSQL_URL) {
+    try {
+      const u = new URL(process.env.MYSQL_URL)
+      console.log("✅ Usando MYSQL_URL")
+      return {
+        host: u.hostname,
+        port: Number(u.port) || 3306,
+        user: decodeURIComponent(u.username),
+        password: decodeURIComponent(u.password),
+        database: u.pathname.slice(1),
+      }
+    } catch (e) {
+      console.error("Error parsing MYSQL_URL:", e.message)
     }
-  } catch { 
-    return null 
+  }
+  
+  // Prioridad 2: Usar DATABASE_URL (para desarrollo local)
+  if (process.env.DATABASE_URL) {
+    try {
+      const u = new URL(process.env.DATABASE_URL)
+      console.log("✅ Usando DATABASE_URL")
+      return {
+        host: u.hostname,
+        port: Number(u.port) || 3306,
+        user: decodeURIComponent(u.username),
+        password: decodeURIComponent(u.password),
+        database: u.pathname.slice(1),
+      }
+    } catch (e) {
+      console.error("Error parsing DATABASE_URL:", e.message)
+    }
+  }
+  
+  // Prioridad 3: Usar variables individuales de Railway
+  console.log("✅ Usando variables individuales")
+  return {
+    host: process.env.MYSQLHOST || process.env.MSQLHOST || process.env.RAILWAY_PRIVATE_DOMAIN || "localhost",
+    port: Number(process.env.MYSQLPORT) || Number(process.env.RAILWAY_TCP_APPLICATION_PORT) || 3306,
+    user: process.env.MYSQLUSER || "root",
+    password: process.env.MYSQLPASSWORD || process.env.MYSQL_ROOT_PASSWORD || "",
+    database: process.env.MYSQL_DATABASE || "railway",
   }
 }
 
-const dbCfg = process.env.DATABASE_URL
-  ? parseDbUrl(process.env.DATABASE_URL)
-  : {
-      host:     process.env.DB_HOST || "localhost",
-      port:     Number(process.env.DB_PORT) || 3306,
-      user:     process.env.DB_USER || "root",
-      password: process.env.DB_PASS || "",
-      database: process.env.DB_NAME || "railway",
-    }
+const dbCfg = getDbConfig()
 
-const pool = mysql.createPool({
-  ...dbCfg,
-  waitForConnections: true,
-  connectionLimit:    10,
-  charset:            "utf8mb4",
-  ssl: { rejectUnauthorized: false },
+console.log("📊 Configuración MySQL:", {
+  host: dbCfg.host,
+  port: dbCfg.port,
+  database: dbCfg.database,
+  user: dbCfg.user,
+  hasPassword: !!dbCfg.password
 })
 
-/* Verificar conexión al arrancar - AHORA NO SALE DEL PROCESO */
+// Crear pool de conexiones
+const pool = mysql.createPool({
+  host: dbCfg.host,
+  port: dbCfg.port,
+  user: dbCfg.user,
+  password: dbCfg.password,
+  database: dbCfg.database,
+  waitForConnections: true,
+  connectionLimit: 5,
+  connectTimeout: 10000,
+  charset: "utf8mb4",
+  ssl: {
+    rejectUnauthorized: false // Necesario para Railway
+  }
+})
+
+// Verificar conexión con reintentos
 ;(async () => {
-  try {
-    const conn = await pool.getConnection()
-    console.log("✅  MySQL conectado →", dbCfg?.database, "@", dbCfg?.host)
-    conn.release()
-  } catch (err) {
-    console.error("⚠️  Advertencia MySQL:", err.message)
-    console.log("🔄  Continuando... Railway reintentará la conexión automáticamente")
-    // NO HACER process.exit(1) - Railway maneja los reintentos
+  let retries = 5
+  while (retries > 0) {
+    try {
+      const conn = await pool.getConnection()
+      console.log("✅ MySQL conectado exitosamente!")
+      console.log(`   Base de datos: ${dbCfg.database}`)
+      console.log(`   Host: ${dbCfg.host}:${dbCfg.port}`)
+      conn.release()
+      break
+    } catch (err) {
+      retries--
+      console.error(`❌ Intento ${5-retries}/5 - Error MySQL:`, err.message)
+      if (retries === 0) {
+        console.error("⚠️ No se pudo conectar a MySQL después de 5 intentos")
+        console.log("🔄 El servidor continuará iniciando... Railway reintentará automáticamente")
+      } else {
+        console.log(`⏳ Reintentando en 3 segundos...`)
+        await new Promise(resolve => setTimeout(resolve, 3000))
+      }
+    }
   }
 })()
 
@@ -159,6 +212,34 @@ app.get("/health/detailed", async (_req, res) => {
       status: "error", 
       database: "disconnected",
       error: err.message 
+    })
+  }
+})
+
+// Endpoint de diagnóstico de BD (temporal, para debugging)
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const [result] = await pool.query('SELECT NOW() as time, DATABASE() as db, USER() as user')
+    res.json({
+      success: true,
+      connection: {
+        host: dbCfg.host,
+        port: dbCfg.port,
+        database: dbCfg.database,
+        user: dbCfg.user
+      },
+      result: result[0]
+    })
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      config: {
+        host: dbCfg.host,
+        port: dbCfg.port,
+        database: dbCfg.database,
+        user: dbCfg.user
+      }
     })
   }
 })
@@ -675,8 +756,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀  SICOT API corriendo`)
   console.log(`🌐  Puerto: ${PORT} (0.0.0.0)`)
   console.log(`📡  Entorno: ${process.env.NODE_ENV || 'development'}`)
-  console.log(`🗄️  DB: ${dbCfg?.host}/${dbCfg?.database}`)
+  console.log(`🗄️  DB Host: ${dbCfg.host}:${dbCfg.port}`)
+  console.log(`🗄️  DB Name: ${dbCfg.database}`)
   console.log(`✅  Health check: /health (para Railway)`)
   console.log(`📊  Health detallado: /health/detailed`)
+  console.log(`🔧  DB Test: /api/db-test`)
   console.log("===================================")
 })

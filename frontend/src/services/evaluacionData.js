@@ -1,6 +1,7 @@
 /* ================================================================
    evaluacionData.js  →  src/services/evaluacionData.js
    VERSIÓN REAL CONECTADA A BASE DE DATOS - CORREGIDA
+   CAMBIOS AGREGADOS: getGruposAPI + soporte de idGrupo en getResultadosDocenteAPI
    ================================================================ */
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://itssnp-evaluaciondocente-production.up.railway.app';
@@ -241,7 +242,7 @@ export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
 }
 
 // ============================================================
-//  FUNCIONES PARA ADMIN / DASHBOARD (CORREGIDAS)
+//  FUNCIONES PARA ADMIN / DASHBOARD (CORREGIDAS + NUEVAS)
 // ============================================================
 
 /**
@@ -311,10 +312,10 @@ export async function getPeriodosAPI() {
 }
 
 /**
- * Obtener resultados de evaluaciones por docente y periodo
- * GET /api/dashboard/resultados?idDocente=X&idPeriodo=Y
+ * NUEVO: Obtener grupos de un docente en un período
+ * GET /api/dashboard/docentes/:idDocente/periodos/:idPeriodo/grupos
  */
-export async function getResultadosDocenteAPI(idDocente, idPeriodo) {
+export async function getGruposAPI(idDocente, idPeriodo) {
   try {
     const token = getToken();
     if (!token) {
@@ -322,9 +323,46 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo) {
     }
 
     const response = await fetch(
-      `${API_URL}/api/dashboard/resultados?idDocente=${idDocente}&idPeriodo=${idPeriodo}`,
+      `${API_URL}/api/dashboard/docentes/${idDocente}/periodos/${idPeriodo}/grupos`,
       { headers: getHeaders() }
     );
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.');
+    }
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Error al obtener grupos');
+    }
+    
+    const data = await response.json();
+    console.log('✅ Grupos cargados:', data);
+    return data.grupos || [];
+  } catch (error) {
+    console.error('❌ Error en getGruposAPI:', error);
+    throw error;
+  }
+}
+
+/**
+ * Obtener resultados de evaluaciones por docente, periodo y grupo (opcional)
+ * GET /api/dashboard/resultados?idDocente=X&idPeriodo=Y&idGrupo=Z (opcional)
+ */
+export async function getResultadosDocenteAPI(idDocente, idPeriodo, idGrupo) {
+  try {
+    const token = getToken();
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
+
+    // Construir URL con parámetros
+    let url = `${API_URL}/api/dashboard/resultados?idDocente=${idDocente}&idPeriodo=${idPeriodo}`;
+    if (idGrupo) {
+      url += `&idGrupo=${idGrupo}`;
+    }
+
+    const response = await fetch(url, { headers: getHeaders() });
     
     if (response.status === 401) {
       throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.');
@@ -337,7 +375,19 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo) {
     
     const data = await response.json();
     console.log('✅ Resultados cargados:', data);
-    return data;
+    
+    // Procesar respuesta para incluir información de grupo en alumnos
+    return {
+      ...data,
+      completaron: (data.completaron || []).map(a => ({
+        ...a,
+        grupo: a.grupo || a.grupo_clave || "",
+      })),
+      faltantes: (data.faltantes || []).map(a => ({
+        ...a,
+        grupo: a.grupo || a.grupo_clave || "",
+      })),
+    };
   } catch (error) {
     console.error('❌ Error en getResultadosDocenteAPI:', error);
     throw error;
@@ -375,70 +425,6 @@ export async function getPeriodoActivoAPI() {
 }
 
 // ============================================================
-//  MOCKS PARA DESARROLLO LOCAL (comentados)
-// ============================================================
-
-/*
-export const PERIODOS_MOCK = [
-  { id: 20251, nombre: "Enero–Junio 2025", activo: false },
-  { id: 20252, nombre: "Agosto–Diciembre 2025", activo: false },
-  { id: 20261, nombre: "Enero–Junio 2026", activo: true },
-];
-
-export const DOCENTES_MOCK = [
-  { id: 101, nombre: "Dr. Carlos Méndez Ríos", grado: "Dr.", departamento: "ISC" },
-  { id: 102, nombre: "M.C. Laura Pérez Sánchez", grado: "M.C.", departamento: "ISC" },
-  { id: 103, nombre: "M.D.E. Miriam Leguizamo Hernández", grado: "M.D.E.", departamento: "INF" },
-];
-
-export function getPerfilAlumnoMock(numControl) {
-  return {
-    num_control: numControl,
-    nombre_completo: "HECTOR DELFINO HERNANDEZ PEREZ",
-    carrera: "Ingeniería Informática",
-    siglas: "INF",
-    semestre: 8,
-    tutores: [
-      {
-        id: 103,
-        nombre: "M.D.E. Miriam Leguizamo Hernández",
-        materia: "Tutoría Grupal",
-        grupo: "IN8A",
-        id_grupo: 1
-      }
-    ]
-  };
-}
-
-export function getEvaluacionesAlumnoMock(numControl) {
-  return {
-    evaluaciones: [],
-    tutoresPendientes: [],
-    totalCompletadas: 0,
-    totalPendientes: 1
-  };
-}
-
-export function getResultadosDocenteMock(idDocente, idPeriodo) {
-  return {
-    docente: { id: idDocente, nombre: "Dr. Carlos Méndez Ríos" },
-    periodo: { id: idPeriodo, nombre: "Enero–Junio 2026" },
-    totalAlumnos: 45,
-    completaron: [
-      { numControl: 12345678, nombre: "Juan Pérez", carrera: "ISC" },
-      { numControl: 12345679, nombre: "María García", carrera: "ISC" }
-    ],
-    faltantes: [
-      { numControl: 12345680, nombre: "Luis Sánchez", carrera: "ISC" }
-    ],
-    promediosCat: { 1: 4.5, 2: 4.2, 3: 4.0, 4: 4.8, 5: 4.3, 6: 4.1, 7: 3.9, 8: 4.4, 9: 4.6 },
-    promedioGeneral: 4.3,
-    clasificacion: "MUY BUENO"
-  };
-}
-*/
-
-// ============================================================
 //  EXPORTS
 // ============================================================
 
@@ -450,18 +436,7 @@ export const iniciarEvaluacion = iniciarEvaluacionAPI;
 export const guardarRespuestas = guardarRespuestasAPI;
 export const getDocentes = getDocentesAPI;
 export const getPeriodos = getPeriodosAPI;
+export const getGrupos = getGruposAPI;
 export const getResultadosDocente = getResultadosDocenteAPI;
 export const yaEvaluado = yaEvaluadoAPI;
 export const getPeriodoActivo = getPeriodoActivoAPI;
-
-// Para usar mocks en desarrollo, comenta las líneas de arriba
-// y descomenta estas:
-/*
-export const getPerfilAlumno = getPerfilAlumnoMock;
-export const getEvaluacionesAlumno = getEvaluacionesAlumnoMock;
-export const getDocentes = () => Promise.resolve(DOCENTES_MOCK);
-export const getPeriodos = () => Promise.resolve(PERIODOS_MOCK);
-export const getResultadosDocente = getResultadosDocenteMock;
-export const yaEvaluado = () => Promise.resolve(false);
-export const getPeriodoActivo = () => Promise.resolve(PERIODOS_MOCK[2]);
-*/

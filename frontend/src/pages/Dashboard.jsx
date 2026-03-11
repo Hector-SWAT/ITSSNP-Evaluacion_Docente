@@ -5,8 +5,8 @@ import {
   CATEGORIAS,
   getDocentesAPI,
   getPeriodosAPI,
-  getResultadosDocenteAPI,
   getGruposAPI,
+  getResultadosDocenteAPI,
 } from "../services/evaluacionData"
 
 /* ─── Colores por clasificación ─────────────────────────────── */
@@ -350,8 +350,6 @@ export default function Dashboard() {
         .db-fsel{height:44px;padding:0 14px;background:#f8faff;border:1.5px solid #e2e8f0;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:#0f172a;cursor:pointer;outline:none;transition:border-color .15s}
         .db-fsel:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
         .db-fsel:disabled{opacity:0.5;cursor:not-allowed}
-        .db-fsel-group{background:#f1f5f9;padding:6px 0;font-size:11px;font-weight:800;color:#64748b;padding-left:14px;padding-right:14px}
-        .db-fsel-group-opt{padding-left:28px;font-size:13px;font-weight:500;color:#0f172a}
 
         /* ── Estado vacío ── */
         .db-empty{background:#fff;border:1.5px dashed #c7d2fe;border-radius:18px;padding:56px 24px;text-align:center;animation:_fadeUp .4s ease both}
@@ -463,7 +461,7 @@ export default function Dashboard() {
                   <>
                     <option value="">— Selecciona un docente —</option>
                     {Object.entries(docentesPorDepartamento).map(([dept, docs]) => (
-                      <optgroup key={dept} label={`${dept}`}>
+                      <optgroup key={dept} label={dept}>
                         {docs.map(d => (
                           <option key={d.id} value={d.id}>{d.nombre}</option>
                         ))}
@@ -514,7 +512,7 @@ export default function Dashboard() {
                     <option value="">— Todos los grupos —</option>
                     {grupos.map(g => (
                       <option key={g.id} value={g.id}>
-                        Grupo {g.clave} ({g.inscritos} alumnos)
+                        {g.clave}
                       </option>
                     ))}
                   </>
@@ -528,7 +526,7 @@ export default function Dashboard() {
             <div className="db-empty">
               <div className="db-empty-icon">📊</div>
               <p className="db-empty-title">Selecciona un docente y periodo</p>
-              <p className="db-empty-sub">Los resultados de la evaluación aparecerán aquí. El filtro de grupo es opcional.</p>
+              <p className="db-empty-sub">Los resultados de la evaluación aparecerán aquí.</p>
             </div>
           )}
 
@@ -566,9 +564,6 @@ export default function Dashboard() {
           {/* ── Resultados ── */}
           {!loading && !error && resultado && (() => {
             const cs = clasifStyle
-            const docenteNombre = docentes.find(d => String(d.id) === idDocente)?.nombre || resultado.docente.nombre
-            const grupoNombre = idGrupo ? grupos.find(g => String(g.id) === idGrupo)?.clave : "Todos"
-            
             return (
               <>
                 {/* Fila 1: Resumen + Progreso */}
@@ -581,9 +576,8 @@ export default function Dashboard() {
                         <span className="db-score-max">/ 5.00</span>
                       </div>
                       <div className="db-resumen-info">
-                        <p className="db-resumen-name">{docenteNombre}</p>
+                        <p className="db-resumen-name">{resultado.docente.nombre}</p>
                         <p className="db-resumen-period">{resultado.periodo.nombre}</p>
-                        {idGrupo && <p style={{ fontSize:12, color:"#7c3aed", fontWeight:700, marginBottom:6 }}>📍 Grupo {grupoNombre}</p>}
                         <div className="db-clasif-badge" style={{ background:cs.badge, color:cs.text }}>
                           ★ {resultado.clasificacion}
                         </div>
@@ -680,10 +674,10 @@ export default function Dashboard() {
                       </table>
                     </div>
                     <div className="db-export-row">
-                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, grupoNombre)}>
+                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, idGrupo ? grupos.find(g => g.id == idGrupo)?.clave : "Todos")}>
                         <span>📄</span> Exportar CSV
                       </button>
-                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, grupoNombre)}>
+                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, idGrupo ? grupos.find(g => g.id == idGrupo)?.clave : "Todos")}>
                         <span>📊</span> Exportar Excel
                       </button>
                     </div>

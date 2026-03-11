@@ -1,28 +1,22 @@
 /**
- * Evaluacion.jsx — versión corregida
- *
- * Causa raíz del salto de preguntas:
- *   El auto-avance anterior usaba setTimeout dentro de setRespuestas(),
- *   capturando `esUltima` y `pagina` en un closure obsoleto. Si React
- *   agrupaba renders, el setTimeout se disparaba dos veces o con el
- *   índice equivocado, saltando preguntas.
- *
- * Solución:
- *   • Un solo estado `fase` controla el flujo: "respondiendo" | "avanzando" | "enviando"
- *   • El useEffect reacciona al cambio de fase — no hay closures en setTimeout
- *   • El setTimeout solo llama a funciones que leen el estado ACTUAL del ref
- *   • `preguntaActualRef` es la única fuente de verdad para el índice
+ * Evaluacion.jsx — VERSIÓN CORREGIDA PARA API REAL
+ * 
+ * Cambios realizados:
+ * 1. ✅ Eliminada dependencia de getPreguntasOrdenadas (mock)
+ * 2. ✅ Ahora usa getPreguntasAPI desde evaluacionData
+ * 3. ✅ Usa iniciarEvaluacionAPI y guardarRespuestasAPI
+ * 4. ✅ Mantiene toda la lógica de UI y experiencia de usuario
  */
 
 import { useState, useEffect, useRef } from "react"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import {
-  getPreguntasOrdenadas,
+  getPreguntasAPI,
+  iniciarEvaluacionAPI,
+  guardarRespuestasAPI,
   CATEGORIAS,
   RUBRICA,
-  marcarEvaluacionCompletada,
-  yaEvaluado,
 } from "../services/evaluacionData"
 
 /* ── Opciones Likert ────────────────────────────────────────── */
@@ -69,14 +63,14 @@ export default function Evaluacion() {
     id: Number(idGrupo), nombre: "Tutor", materia: "", grupo: "",
   }
   const numControl = location.state?.numControl ?? user?.id ?? 0
+  const idGrupoReal = location.state?.idGrupo ?? idGrupo
 
-  /* ── Preguntas — generadas una sola vez ── */
-  const preguntasRef = useRef(null)
-  if (!preguntasRef.current) {
-    preguntasRef.current = getPreguntasOrdenadas(numControl)
-  }
-  const preguntas = preguntasRef.current
-  const TOTAL     = preguntas.length
+  /* ── Estados para datos de la API ── */
+  const [preguntas, setPreguntas] = useState([])
+  const [idEncuesta, setIdEncuesta] = useState(null)
+  const [idEvaluacion, setIdEvaluacion] = useState(null)
+  const [cargandoInicial, setCargandoInicial] = useState(true)
+  const [errorInicial, setErrorInicial] = useState("")
 
   /* ── Estado principal ──
      `fase` es la máquina de estados:
@@ -101,11 +95,31 @@ export default function Evaluacion() {
   useEffect(() => { paginaRef.current     = pagina    }, [pagina])
   useEffect(() => { respuestasRef.current = respuestas }, [respuestas])
 
-  /* Redirigir si ya completó esta encuesta */
+  /* ── Cargar preguntas desde la API al montar ── */
   useEffect(() => {
-    if (user && yaEvaluado(user.id, tutor.id)) {
-      navigate("/panel-alumno", { replace: true })
+    const cargarPreguntas = async () => {
+      try {
+        setCargandoInicial(true)
+        const data = await getPreguntasAPI()
+        setPreguntas(data.preguntas || [])
+        setIdEncuesta(data.idEncuesta)
+
+        // Iniciar evaluación
+        const inicio = await iniciarEvaluacionAPI(numControl, tutor.id, idGrupoReal)
+        setIdEvaluacion(inicio.idEvaluacion)
+        
+      } catch (error) {
+        console.error("Error al cargar evaluación:", error)
+        setErrorInicial(error.message || "Error al cargar la evaluación")
+      } finally {
+        setCargandoInicial(false)
+      }
     }
+
+    if (tutor.id && numControl && idGrupoReal) {
+      cargarPreguntas()
+    }
+
     return () => {
       clearTimeout(timerRef.current)
       clearTimeout(toastRef.current)
@@ -135,18 +149,32 @@ export default function Evaluacion() {
     if (fase === "enviando") {
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(async () => {
-        /* ← BACKEND: reemplaza esto con POST /api/evaluacion/responder */
-        const payload = Object.entries(respuestasRef.current).map(([idPregunta, calificacion]) => ({
-          idPregunta: Number(idPregunta),
-          calificacion,
-        }))
-        console.log("Enviando respuestas:", payload)
-        await new Promise(r => setTimeout(r, 800))
-        marcarEvaluacionCompletada(user.id, tutor.id)
-        navigate("/gracias", { replace: true, state: { tutor, totalPreguntas: TOTAL } })
+        try {
+          // Preparar respuestas para la API
+          const respuestasArray = Object.entries(respuestasRef.current).map(([idPregunta, calificacion]) => ({
+            idPregunta: Number(idPregunta),
+            calificacion,
+          }))
+
+          // Enviar a la API
+          const resultado = await guardarRespuestasAPI(idEvaluacion, respuestasArray)
+          
+          if (resultado.success) {
+            navigate("/gracias", { 
+              replace: true, 
+              state: { tutor, totalPreguntas: preguntas.length } 
+            })
+          } else {
+            console.error("Error al guardar:", resultado.error)
+            setFase("libre") // Volver a estado libre si hay error
+          }
+        } catch (error) {
+          console.error("Error en envío:", error)
+          setFase("libre")
+        }
       }, 1100)
     }
-  }, [fase]) // eslint-disable-line — solo reacciona a cambios de fase
+  }, [fase, idEvaluacion, navigate, preguntas.length, tutor])
 
   /* ── Derivados del render actual ── */
   const pregActual   = preguntas[pagina]
@@ -154,9 +182,10 @@ export default function Evaluacion() {
   const rubrica      = RUBRICA[pregActual?.idCategoria] ?? {}
   const respActual   = respuestas[pregActual?.id]
   const respondidas  = Object.keys(respuestas).length
-  const progPct      = Math.round((pagina / TOTAL) * 100)
-  const esUltima     = pagina === TOTAL - 1
+  const progPct      = preguntas.length ? Math.round((pagina / preguntas.length) * 100) : 0
+  const esUltima     = pagina === preguntas.length - 1
   const estaLibre    = fase === "libre"
+  const TOTAL        = preguntas.length
 
   /* ── Toast ── */
   const mostrarToast = () => {
@@ -184,6 +213,63 @@ export default function Evaluacion() {
 
     /* Cambiar fase — el useEffect de arriba se encarga del resto */
     setFase(esUltima ? "enviando" : "transitando")
+  }
+
+  /* ── Loading inicial ── */
+  if (cargandoInicial) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%)'
+      }}>
+        <div style={{
+          width: '60px',
+          height: '60px',
+          border: '5px solid rgba(255,255,255,0.2)',
+          borderTopColor: '#fff',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          marginBottom: '20px'
+        }} />
+        <p style={{ color: '#fff', fontSize: '16px' }}>Cargando evaluación...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  /* ── Error inicial ── */
+  if (errorInicial) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        padding: '20px',
+        textAlign: 'center'
+      }}>
+        <h2 style={{ color: '#b91c1c', marginBottom: '16px' }}>Error</h2>
+        <p style={{ marginBottom: '24px' }}>{errorInicial}</p>
+        <button
+          onClick={() => navigate("/panel-alumno")}
+          style={{
+            padding: '12px 24px',
+            background: '#2563eb',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer'
+          }}
+        >
+          Volver al panel
+        </button>
+      </div>
+    )
   }
 
   if (!pregActual) return null

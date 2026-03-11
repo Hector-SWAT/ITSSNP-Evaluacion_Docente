@@ -6,6 +6,7 @@ import {
   getDocentesAPI,
   getPeriodosAPI,
   getResultadosDocenteAPI,
+  getGruposAPI,
 } from "../services/evaluacionData"
 
 /* ─── Colores por clasificación ─────────────────────────────── */
@@ -103,25 +104,26 @@ function RadarChart({ datos, size = 260 }) {
 }
 
 /* ─── Exportar CSV ───────────────────────────────────────────── */
-function exportarCSV(resultado) {
+function exportarCSV(resultado, grupoSeleccionado) {
   if (!resultado) return
   const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   const rows = []
   rows.push(["SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP"])
   rows.push(["Docente:", docente.nombre])
   rows.push(["Periodo:", periodo.nombre])
+  if (grupoSeleccionado) rows.push(["Grupo:", grupoSeleccionado])
   rows.push(["Promedio general:", promedioGeneral, "Clasificación:", clasificacion])
   rows.push([])
   rows.push(["#","Criterio","Promedio"])
   CATEGORIAS.forEach((cat, i) => rows.push([i+1, cat.nombre, promediosCat[cat.id]?.toFixed(2) ?? "—"]))
   rows.push([])
   rows.push(["ALUMNOS QUE COMPLETARON LA ENCUESTA"])
-  rows.push(["No. Control","Nombre","Carrera"])
-  completaron.forEach(a => rows.push([a.numControl, a.nombre, a.carrera]))
+  rows.push(["No. Control","Nombre","Grupo","Carrera"])
+  completaron.forEach(a => rows.push([a.numControl, a.nombre, a.grupo || "—", a.carrera]))
   rows.push([])
   rows.push(["ALUMNOS PENDIENTES"])
-  rows.push(["No. Control","Nombre","Carrera"])
-  faltantes.forEach(a => rows.push([a.numControl, a.nombre, a.carrera]))
+  rows.push(["No. Control","Nombre","Grupo","Carrera"])
+  faltantes.forEach(a => rows.push([a.numControl, a.nombre, a.grupo || "—", a.carrera]))
   const csv  = rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\n")
   const blob = new Blob(["\uFEFF" + csv], { type:"text/csv;charset=utf-8;" })
   const url  = URL.createObjectURL(blob)
@@ -133,7 +135,7 @@ function exportarCSV(resultado) {
 }
 
 /* ─── Exportar Excel ─────────────────────────────────────────── */
-function exportarExcel(resultado) {
+function exportarExcel(resultado, grupoSeleccionado) {
   if (!resultado) return
   const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   const cell    = (v) => `<Cell><Data ss:Type="String">${String(v ?? "")}</Data></Cell>`
@@ -145,18 +147,19 @@ function exportarExcel(resultado) {
 <Row><Cell><Data ss:Type="String">SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP</Data></Cell></Row>
 <Row><Cell><Data ss:Type="String">Docente: ${docente.nombre}</Data></Cell></Row>
 <Row><Cell><Data ss:Type="String">Periodo: ${periodo.nombre}</Data></Cell></Row>
+${grupoSeleccionado ? `<Row><Cell><Data ss:Type="String">Grupo: ${grupoSeleccionado}</Data></Cell></Row>` : ""}
 <Row><Cell><Data ss:Type="String">Promedio general: ${promedioGeneral}</Data></Cell><Cell><Data ss:Type="String">Clasificación: ${clasificacion}</Data></Cell></Row>
 <Row/>
 <Row><Cell><Data ss:Type="String">#</Data></Cell><Cell><Data ss:Type="String">Criterio</Data></Cell><Cell><Data ss:Type="String">Promedio</Data></Cell></Row>
 ${CATEGORIAS.map((cat,i) => `<Row>${numCell(i+1)}${cell(cat.nombre)}${numCell((promediosCat[cat.id]??0).toFixed(2))}</Row>`).join("")}
 <Row/>
 <Row><Cell><Data ss:Type="String">ALUMNOS QUE COMPLETARON</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
-${completaron.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.carrera)}</Row>`).join("")}
+<Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Grupo</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
+${completaron.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.grupo || "—")}${cell(a.carrera)}</Row>`).join("")}
 <Row/>
 <Row><Cell><Data ss:Type="String">ALUMNOS PENDIENTES</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
-${faltantes.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.carrera)}</Row>`).join("")}
+<Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Grupo</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
+${faltantes.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.grupo || "—")}${cell(a.carrera)}</Row>`).join("")}
 </Table></Worksheet></Workbook>`
   const blob = new Blob([xml], { type:"application/vnd.ms-excel;charset=utf-8;" })
   const url  = URL.createObjectURL(blob)
@@ -177,10 +180,12 @@ export default function Dashboard() {
   /* ── Listas para los selects ── */
   const [docentes, setDocentes] = useState([])
   const [periodos, setPeriodos] = useState([])
+  const [grupos, setGrupos] = useState([])
 
   /* ── Filtros seleccionados ── */
   const [idDocente, setIdDocente] = useState("")
   const [idPeriodo, setIdPeriodo] = useState("")
+  const [idGrupo, setIdGrupo] = useState("")
 
   /* ── Resultado de la API ── */
   const [resultado, setResultado] = useState(null)
@@ -190,16 +195,25 @@ export default function Dashboard() {
   /* ── Estados de carga para selects ── */
   const [cargandoDocentes, setCargandoDocentes] = useState(true)
   const [cargandoPeriodos, setCargandoPeriodos] = useState(true)
+  const [cargandoGrupos, setCargandoGrupos] = useState(false)
   const [errorDocentes, setErrorDocentes] = useState(null)
   const [errorPeriodos, setErrorPeriodos] = useState(null)
+  const [errorGrupos, setErrorGrupos] = useState(null)
 
   /* ── UI ── */
   const [tabAlumnos, setTabAlumnos] = useState("completaron")
   const [vistaGraf,  setVistaGraf]  = useState("barras")
 
+  /* ── Agrupar docentes por departamento ── */
+  const docentesPorDepartamento = docentes.reduce((acc, doc) => {
+    const dept = doc.departamento || "Sin Departamento"
+    if (!acc[dept]) acc[dept] = []
+    acc[dept].push(doc)
+    return acc
+  }, {})
+
   /* ── Verificar autenticación al cargar ── */
   useEffect(() => {
-    // Si no hay usuario o no es admin, redirigir al login
     if (!user || user.tipo !== "admin") {
       navigate("/login", { replace: true })
       return
@@ -208,7 +222,6 @@ export default function Dashboard() {
 
   /* ── Cargar docentes y periodos al montar ── */
   useEffect(() => {
-    // Solo cargar si hay usuario admin
     if (!user || user.tipo !== "admin") return
 
     const cargarDatos = async () => {
@@ -220,7 +233,6 @@ export default function Dashboard() {
       } catch (err) {
         console.error("Error cargando docentes:", err)
         setErrorDocentes(err.message)
-        // Si el error es de autenticación, redirigir
         if (err.message.includes("Token") || err.message.includes("401")) {
           navigate("/login", { replace: true })
         }
@@ -233,7 +245,6 @@ export default function Dashboard() {
         const pers = await getPeriodosAPI()
         setPeriodos(pers)
         setErrorPeriodos(null)
-        // Seleccionar periodo activo por defecto
         const activo = pers.find(p => p.activo === 1 || p.activo === true)
         if (activo) setIdPeriodo(String(activo.id))
       } catch (err) {
@@ -250,6 +261,34 @@ export default function Dashboard() {
     cargarDatos()
   }, [user, navigate])
 
+  /* ── Cargar grupos cuando cambian docente y periodo ── */
+  useEffect(() => {
+    if (!idDocente || !idPeriodo) {
+      setGrupos([])
+      setIdGrupo("")
+      return
+    }
+
+    const cargarGrupos = async () => {
+      try {
+        setCargandoGrupos(true)
+        const gruposData = await getGruposAPI(Number(idDocente), Number(idPeriodo))
+        setGrupos(gruposData)
+        setErrorGrupos(null)
+        setIdGrupo("")
+      } catch (err) {
+        console.error("Error cargando grupos:", err)
+        setErrorGrupos(err.message)
+        setGrupos([])
+        setIdGrupo("")
+      } finally {
+        setCargandoGrupos(false)
+      }
+    }
+
+    cargarGrupos()
+  }, [idDocente, idPeriodo])
+
   /* ── Consultar resultados cuando cambian los selects ── */
   useEffect(() => {
     if (!idDocente || !idPeriodo) {
@@ -260,7 +299,7 @@ export default function Dashboard() {
     setLoading(true)
     setError(null)
     setResultado(null)
-    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo))
+    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
       .then(data => setResultado(data))
       .catch(err => {
         setError(err.message || "Error al obtener resultados")
@@ -269,7 +308,7 @@ export default function Dashboard() {
         }
       })
       .finally(() => setLoading(false))
-  }, [idDocente, idPeriodo, navigate])
+  }, [idDocente, idPeriodo, idGrupo, navigate])
 
   const clasifStyle = resultado ? (CLASIF_COLOR[resultado.clasificacion] ?? CLASIF_COLOR.REGULAR) : {}
   const pctCompleto = resultado
@@ -311,6 +350,8 @@ export default function Dashboard() {
         .db-fsel{height:44px;padding:0 14px;background:#f8faff;border:1.5px solid #e2e8f0;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:#0f172a;cursor:pointer;outline:none;transition:border-color .15s}
         .db-fsel:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
         .db-fsel:disabled{opacity:0.5;cursor:not-allowed}
+        .db-fsel-group{background:#f1f5f9;padding:6px 0;font-size:11px;font-weight:800;color:#64748b;padding-left:14px;padding-right:14px}
+        .db-fsel-group-opt{padding-left:28px;font-size:13px;font-weight:500;color:#0f172a}
 
         /* ── Estado vacío ── */
         .db-empty{background:#fff;border:1.5px dashed #c7d2fe;border-radius:18px;padding:56px 24px;text-align:center;animation:_fadeUp .4s ease both}
@@ -369,6 +410,7 @@ export default function Dashboard() {
         .db-table tr:hover td{background:#fafbff}
         .db-nc{font-family:monospace;font-weight:700;color:#3b4fd8;font-size:12px}
         .db-chip-carrera{background:#f1f5ff;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;color:#3b4fd8}
+        .db-chip-grupo{background:#f5f0ff;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;color:#7c3aed}
         .db-chip-pend{background:#fff7ed;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;color:#c2410c}
 
         /* ── Exportar ── */
@@ -420,8 +462,12 @@ export default function Dashboard() {
                 {!cargandoDocentes && !errorDocentes && (
                   <>
                     <option value="">— Selecciona un docente —</option>
-                    {docentes.map(d => (
-                      <option key={d.id} value={d.id}>{d.nombre}</option>
+                    {Object.entries(docentesPorDepartamento).map(([dept, docs]) => (
+                      <optgroup key={dept} label={`${dept}`}>
+                        {docs.map(d => (
+                          <option key={d.id} value={d.id}>{d.nombre}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </>
                 )}
@@ -449,6 +495,32 @@ export default function Dashboard() {
                 )}
               </select>
             </div>
+            <div className="db-fgroup">
+              <label className="db-flabel">Grupo (Opcional)</label>
+              <select
+                className="db-fsel"
+                value={idGrupo}
+                onChange={e => setIdGrupo(e.target.value)}
+                disabled={!idDocente || !idPeriodo || cargandoGrupos || errorGrupos !== null}
+              >
+                {!idDocente || !idPeriodo ? (
+                  <option value="">Selecciona docente y periodo</option>
+                ) : cargandoGrupos ? (
+                  <option value="">Cargando grupos...</option>
+                ) : errorGrupos ? (
+                  <option value="">Error al cargar grupos</option>
+                ) : (
+                  <>
+                    <option value="">— Todos los grupos —</option>
+                    {grupos.map(g => (
+                      <option key={g.id} value={g.id}>
+                        Grupo {g.clave} ({g.inscritos} alumnos)
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
           </div>
 
           {/* ── Estado vacío ── */}
@@ -456,7 +528,7 @@ export default function Dashboard() {
             <div className="db-empty">
               <div className="db-empty-icon">📊</div>
               <p className="db-empty-title">Selecciona un docente y periodo</p>
-              <p className="db-empty-sub">Los resultados de la evaluación aparecerán aquí.</p>
+              <p className="db-empty-sub">Los resultados de la evaluación aparecerán aquí. El filtro de grupo es opcional.</p>
             </div>
           )}
 
@@ -479,7 +551,7 @@ export default function Dashboard() {
                 onClick={() => {
                   if (idDocente && idPeriodo) {
                     setLoading(true)
-                    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo))
+                    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
                       .then(data => setResultado(data))
                       .catch(err => setError(err.message))
                       .finally(() => setLoading(false))
@@ -494,6 +566,9 @@ export default function Dashboard() {
           {/* ── Resultados ── */}
           {!loading && !error && resultado && (() => {
             const cs = clasifStyle
+            const docenteNombre = docentes.find(d => String(d.id) === idDocente)?.nombre || resultado.docente.nombre
+            const grupoNombre = idGrupo ? grupos.find(g => String(g.id) === idGrupo)?.clave : "Todos"
+            
             return (
               <>
                 {/* Fila 1: Resumen + Progreso */}
@@ -506,8 +581,9 @@ export default function Dashboard() {
                         <span className="db-score-max">/ 5.00</span>
                       </div>
                       <div className="db-resumen-info">
-                        <p className="db-resumen-name">{resultado.docente.nombre}</p>
+                        <p className="db-resumen-name">{docenteNombre}</p>
                         <p className="db-resumen-period">{resultado.periodo.nombre}</p>
+                        {idGrupo && <p style={{ fontSize:12, color:"#7c3aed", fontWeight:700, marginBottom:6 }}>📍 Grupo {grupoNombre}</p>}
                         <div className="db-clasif-badge" style={{ background:cs.badge, color:cs.text }}>
                           ★ {resultado.clasificacion}
                         </div>
@@ -580,6 +656,7 @@ export default function Dashboard() {
                           <tr>
                             <th>No. Control</th>
                             <th>Nombre</th>
+                            <th>Grupo</th>
                             <th>Carrera</th>
                             <th>Estado</th>
                           </tr>
@@ -589,6 +666,7 @@ export default function Dashboard() {
                             <tr key={a.numControl}>
                               <td><span className="db-nc">{a.numControl}</span></td>
                               <td style={{ fontWeight:600 }}>{a.nombre}</td>
+                              <td><span className="db-chip-grupo">{a.grupo || "—"}</span></td>
                               <td><span className="db-chip-carrera">{a.carrera}</span></td>
                               <td>
                                 {tabAlumnos === "completaron"
@@ -602,10 +680,10 @@ export default function Dashboard() {
                       </table>
                     </div>
                     <div className="db-export-row">
-                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado)}>
+                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, grupoNombre)}>
                         <span>📄</span> Exportar CSV
                       </button>
-                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado)}>
+                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, grupoNombre)}>
                         <span>📊</span> Exportar Excel
                       </button>
                     </div>

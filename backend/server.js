@@ -669,7 +669,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 })
 
 /* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/resultados (CORREGIDO)
+   DASHBOARD — GET /api/dashboard/resultados (CORREGIDO - SIN ERROR DE ORDER BY)
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.query
@@ -690,6 +690,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       return res.status(400).json({ error: "IDs inválidos" })
     }
 
+    // 1. Obtener datos del docente
     const [[docente]] = await pool.query(`
       SELECT id_doce, CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre
       FROM   docente 
@@ -700,85 +701,86 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       return res.status(404).json({ error: "Docente no encontrado." })
     }
 
+    // 2. Obtener datos del periodo
     const [[periodo]] = await pool.query(
       `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, 
       [periodoId]
     )
 
-    // Si no hay periodo, devolver estructura vacía
-    if (!periodo) {
-      return res.json({
-        docente,
-        periodo: { id: periodoId, nombre: "Periodo no encontrado" },
-        totalAlumnos: 0,
-        totalCompletaron: 0,
-        totalFaltantes: 0,
-        completaron: [],
-        faltantes: [],
-        promediosCat: {},
-        promedioGeneral: 0,
-        clasificacion: "SIN DATOS"
-      })
-    }
-
+    // 3. Obtener promedios por categoría
     const [promediosCat] = await pool.query(`
-      SELECT p.id_categoria AS idCategoria, 
-             ROUND(COALESCE(AVG(re.calificacion), 0), 2) AS promedio,
-             COUNT(DISTINCT re.id_evaluacion) AS totalEvaluaciones
-      FROM   respuesta_evaluacion re
-      RIGHT JOIN   pregunta p             ON p.id_pregunta   = re.id_pregunta AND 
-                                            re.id_evaluacion IN (
-                                              SELECT id_evaluacion FROM evaluacion_docente 
-                                              WHERE id_doce = ? AND id_perio = ? AND estado = 3
-                                            )
-      WHERE p.id_encuesta = (SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1)
-      GROUP  BY p.id_categoria 
-      ORDER BY p.id_categoria
+      SELECT 
+        c.id_categoria,
+        c.nombre,
+        COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
+      FROM categoria c
+      LEFT JOIN pregunta p ON p.id_categoria = c.id_categoria 
+        AND p.id_encuesta = (SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1)
+      LEFT JOIN respuesta_evaluacion r ON r.id_pregunta = p.id_pregunta
+      LEFT JOIN evaluacion_docente e ON e.id_evaluacion = r.id_evaluacion 
+        AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
+      GROUP BY c.id_categoria, c.nombre
+      ORDER BY c.id_categoria
     `, [docenteId, periodoId])
 
+    // 4. Obtener total de alumnos y completados
     const [[counts]] = await pool.query(`
       SELECT
         COUNT(DISTINCT i.num_control) AS total_alumnos,
-        COALESCE(SUM(CASE WHEN ed.estado = 3 THEN 1 ELSE 0 END), 0) AS completaron
+        COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END) AS completaron
       FROM inscripcion i
       JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
-      LEFT JOIN evaluacion_docente ed
-        ON ed.num_control = i.num_control AND ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
+      LEFT JOIN evaluacion_docente e ON e.num_control = i.num_control 
+        AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
       WHERE i.activa = 1
     `, [docenteId, periodoId, docenteId, periodoId])
 
+    // 5. Obtener alumnos que completaron (SIN DISTINCT EN SELECT Y ORDER BY)
     const [completaron] = await pool.query(`
-      SELECT DISTINCT a.num_control AS numControl, 
-                      a.nombre_completo AS nombre, 
-                      c.nombre_corto AS carrera
-      FROM   evaluacion_docente ed
-      JOIN   alumno a  ON a.num_control = ed.num_control
-      JOIN   carrera c ON c.id_carre = a.id_carre
-      WHERE  ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
+      SELECT 
+        a.num_control AS numControl, 
+        a.nombre_completo AS nombre, 
+        c.nombre_corto AS carrera
+      FROM evaluacion_docente e
+      JOIN alumno a ON a.num_control = e.num_control
+      JOIN carrera c ON c.id_carre = a.id_carre
+      WHERE e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
       ORDER BY a.a_paterno, a.a_materno
     `, [docenteId, periodoId])
 
+    // 6. Obtener alumnos pendientes
     const [faltantes] = await pool.query(`
-      SELECT DISTINCT a.num_control AS numControl, 
-                      a.nombre_completo AS nombre, 
-                      c.nombre_corto AS carrera
-      FROM   inscripcion i
-      JOIN   grupo g   ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
-      JOIN   alumno a  ON a.num_control = i.num_control
-      JOIN   carrera c ON c.id_carre = a.id_carre
-      WHERE  i.activa = 1
-        AND  i.num_control NOT IN (
-          SELECT ed2.num_control FROM evaluacion_docente ed2
-          WHERE ed2.id_doce = ? AND ed2.id_perio = ? AND ed2.estado = 3
+      SELECT 
+        a.num_control AS numControl, 
+        a.nombre_completo AS nombre, 
+        c.nombre_corto AS carrera
+      FROM inscripcion i
+      JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
+      JOIN alumno a ON a.num_control = i.num_control
+      JOIN carrera c ON c.id_carre = a.id_carre
+      WHERE i.activa = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM evaluacion_docente e
+          WHERE e.num_control = i.num_control 
+            AND e.id_doce = ? 
+            AND e.id_perio = ? 
+            AND e.estado = 3
         )
       ORDER BY a.a_paterno, a.a_materno
     `, [docenteId, periodoId, docenteId, periodoId])
 
-    const vals = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
-    const promedioGeneral = vals.length
-      ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) 
+    // 7. Calcular promedio general
+    const promediosMap = {}
+    promediosCat.forEach(p => {
+      promediosMap[p.id_categoria] = Number(p.promedio)
+    })
+    
+    const valoresPromedio = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
+    const promedioGeneral = valoresPromedio.length
+      ? +(valoresPromedio.reduce((a, b) => a + b, 0) / valoresPromedio.length).toFixed(2) 
       : 0
 
+    // 8. Determinar clasificación
     const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
                         : promedioGeneral >= 3.5 ? "MUY BUENO"
                         : promedioGeneral >= 2.5 ? "BUENO"
@@ -786,6 +788,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
                         : promedioGeneral > 0 ? "DEFICIENTE"
                         : "SIN DATOS"
 
+    // 9. Respuesta exitosa
     return res.json({
       docente, 
       periodo,
@@ -794,7 +797,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       totalFaltantes: faltantes.length,
       completaron, 
       faltantes,
-      promediosCat: Object.fromEntries(promediosCat.map(p => [p.idCategoria, Number(p.promedio)])),
+      promediosCat: promediosMap,
       promedioGeneral, 
       clasificacion,
     })

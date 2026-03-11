@@ -362,7 +362,7 @@ app.post("/api/auth/login", async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   ALUMNO — GET /api/alumno/perfil
+   ALUMNO — GET /api/alumno/perfil (CORREGIDO)
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
   if (req.user.tipo !== "alumno") {
@@ -656,7 +656,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 })
 
 /* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/resultados
+   DASHBOARD — GET /api/dashboard/resultados (CORREGIDO)
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.query
@@ -704,6 +704,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       WHERE i.activa = 1
     `, [idDocente, idPeriodo, idDocente, idPeriodo])
 
+    // CORREGIDO: Reemplazar a.apellidos por a.a_paterno, a.a_materno
     const [completaron] = await pool.query(`
       SELECT DISTINCT a.num_control AS numControl, 
                       a.nombre_completo AS nombre, 
@@ -712,9 +713,10 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       JOIN   alumno a  ON a.num_control = ed.num_control
       JOIN   carrera c ON c.id_carre = a.id_carre
       WHERE  ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
-      ORDER BY a.apellidos
+      ORDER BY a.a_paterno, a.a_materno
     `, [idDocente, idPeriodo])
 
+    // CORREGIDO: Reemplazar a.apellidos por a.a_paterno, a.a_materno
     const [faltantes] = await pool.query(`
       SELECT DISTINCT a.num_control AS numControl, 
                       a.nombre_completo AS nombre, 
@@ -728,7 +730,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
           SELECT ed2.num_control FROM evaluacion_docente ed2
           WHERE ed2.id_doce = ? AND ed2.id_perio = ? AND ed2.estado = 3
         )
-      ORDER BY a.apellidos
+      ORDER BY a.a_paterno, a.a_materno
     `, [idDocente, idPeriodo, idDocente, idPeriodo])
 
     const vals = promediosCat.map(p => Number(p.promedio))

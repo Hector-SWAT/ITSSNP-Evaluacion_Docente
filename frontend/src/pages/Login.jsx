@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext"
 
 // ── Imágenes desde frontend/public/assets/ ──────────────────
 const ASSETS = {
-  logoITSSNP: "/assets/logo_itssnp2.png",
+  logoITSSNP: "/assets/logo-itssnp2.png",
   logoTECNM:  "/assets/logo-tecnm.png",
   iconUser:   "/assets/icon-user.png",
   iconLock:   "/assets/icon-lock.png",

@@ -1,19 +1,15 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 
-// URLs de PostImages para todos los assets
+// URLs CORRECTAS de PostImages para todos los assets
 const ASSETS = {
-  logoITSSNP: "https://i.postimg.cc/YhqbKr76/logo-itssnp.png",
-  logoITSSNP2: "https://i.postimg.cc/Xp7QSjW9/logo-itssnp2.png",
+  logoITSSNP: "https://i.postimg.cc/vH5jnTS2/logo_itssnp2.png",
   logoTECNM: "https://i.postimg.cc/ykYv41K5/logo-tecnm.png",
-  logoTECNM2: "https://i.postimg.cc/QHx0G8Dz/logo-tecnm2.png",
   iconUser: "https://i.postimg.cc/hh0p5Jkx/icon-user.png",
   iconLock: "https://i.postimg.cc/kDyfpV0b/icon-lock.png",
   iconEye: "https://i.postimg.cc/K45JHK6T/icon-eye.png",
-  iconEyeOff: "https://i.postimg.cc/DmcBMW9b/icon-eye-off.png",
-  logoInfo: "https://i.postimg.cc/D8yBkvhW/Logo-Info.jpg",
-  logoInfo2: "https://i.postimg.cc/BXQM9S35/Logo-Info2.png"
+  iconEyeOff: "https://i.postimg.cc/DmcBMW9b/icon-eye-off.png"
 }
 
 export default function Login() {
@@ -26,13 +22,26 @@ export default function Login() {
   const [cargando,    setCargando]    = useState(false)
   const [verPassword, setVerPassword] = useState(false)
 
-  // Fallbacks para assets si falla la URL
-  const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
-  const [logoTECNMFail,  setLogoTECNMFail]  = useState(false)
-  const [iconUserFail,   setIconUserFail]   = useState(false)
-  const [iconLockFail,   setIconLockFail]   = useState(false)
-  const [iconEyeFail,    setIconEyeFail]    = useState(false)
-  const [iconEyeOffFail, setIconEyeOffFail] = useState(false)
+  // Estados para fallbacks de assets
+  const [logoITSSNPError, setLogoITSSNPError] = useState(false)
+  const [logoTECNMError, setLogoTECNMError] = useState(false)
+
+  // Verificar que los assets carguen
+  useEffect(() => {
+    // Probar logos
+    const testImage = (url, setError) => {
+      const img = new Image()
+      img.onload = () => console.log(`✅ Logo cargado: ${url}`)
+      img.onerror = () => {
+        console.error(`❌ Error cargando: ${url}`)
+        setError(true)
+      }
+      img.src = url
+    }
+    
+    testImage(ASSETS.logoITSSNP, setLogoITSSNPError)
+    testImage(ASSETS.logoTECNM, setLogoTECNMError)
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -82,7 +91,7 @@ export default function Login() {
           grid-template-columns: 55% 45%;
         }
 
-        /* ── Panel izquierdo ── */
+        /* ── Panel izquierdo con degradado institucional ── */
         .lp-brand {
           background: linear-gradient(155deg, #0b1f4a 0%, #1648b8 60%, #0b7ec9 100%);
           display: flex; flex-direction: column;
@@ -103,13 +112,16 @@ export default function Login() {
         }
         .lp-logo-container {
           display: flex; align-items: center; justify-content: center;
+          background: rgba(255,255,255,0.95);
+          border-radius: 16px;
+          padding: 16px 24px;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }
         .lp-logo {
-          height: 80px;
+          height: 70px;
           width: auto;
-          max-width: 180px;
           object-fit: contain;
-          filter: brightness(1.1) drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+          filter: brightness(1);
           transition: transform 0.2s ease;
         }
         .lp-logo:hover {
@@ -117,7 +129,7 @@ export default function Login() {
         }
         .lp-divider {
           width: 2px;
-          height: 60px;
+          height: 50px;
           background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.5), transparent);
         }
 
@@ -139,7 +151,9 @@ export default function Login() {
         }
         .lp-title span {
           color: #7dd3fc;
+          font-weight: 800;
         }
+
         .lp-badge {
           display: inline-flex; align-items: center; gap: 8px;
           background: rgba(255,255,255,0.12);
@@ -150,14 +164,14 @@ export default function Login() {
           margin-top: 16px;
         }
 
-        /* ── Panel derecho ── */
+        /* ── Panel derecho con formulario ── */
         .lp-form-side {
           background: #fff;
           display: flex; align-items: center; justify-content: center;
           padding: 40px clamp(24px, 5vw, 64px);
         }
         .lp-card {
-          width: 100%; max-width: 420px;
+          width: 100%; max-width: 400px;
           animation: fadeUp 0.45s ease both;
         }
         .lp-card-title {
@@ -199,7 +213,7 @@ export default function Login() {
 
         .lp-input {
           width: 100%; 
-          padding: 15px 16px 15px 48px;
+          padding: 14px 16px 14px 48px;
           border: 1.5px solid #e2e8f0; 
           border-radius: 14px;
           font-family: 'DM Sans', sans-serif; 
@@ -272,6 +286,9 @@ export default function Login() {
           transform: translateY(-2px); 
           box-shadow: 0 8px 24px rgba(37,99,235,0.45); 
         }
+        .lp-btn:active:not(:disabled) { 
+          transform: translateY(0); 
+        }
         .lp-btn:disabled { 
           opacity: 0.65; 
           cursor: not-allowed; 
@@ -292,7 +309,6 @@ export default function Login() {
           line-height: 1.6;
         }
 
-        /* Logos móvil */
         .lp-mobile-logos {
           display: none;
         }
@@ -325,15 +341,15 @@ export default function Login() {
             margin-bottom: 32px;
           }
           .lp-mobile-logo {
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            background: #fff;
+            border-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
           }
           .lp-mobile-logo img {
-            height: 50px;
+            height: 40px;
             width: auto;
             object-fit: contain;
-            filter: brightness(1.1);
           }
           .lp-mobile-divider {
             width: 2px;
@@ -345,29 +361,33 @@ export default function Login() {
 
       <div className="lp-root">
 
-        {/* Panel izquierdo con logos de PostImages */}
+        {/* ── Panel izquierdo con logos ── */}
         <div className="lp-brand">
           <div className="lp-logos">
             <div className="lp-logo-container">
-              <img 
-                src={ASSETS.logoITSSNP}
-                alt="ITSSNP" 
-                className="lp-logo"
-                onError={(e) => {
-                  e.target.src = ASSETS.logoITSSNP2; // Intenta con el segundo logo
-                }}
-              />
+              {!logoITSSNPError ? (
+                <img 
+                  src={ASSETS.logoITSSNP} 
+                  alt="ITSSNP" 
+                  className="lp-logo"
+                  onError={() => setLogoITSSNPError(true)}
+                />
+              ) : (
+                <span style={{color:'#fff', fontSize:'40px'}}>🏫</span>
+              )}
             </div>
             <div className="lp-divider" />
             <div className="lp-logo-container">
-              <img 
-                src={ASSETS.logoTECNM}
-                alt="TecNM" 
-                className="lp-logo"
-                onError={(e) => {
-                  e.target.src = ASSETS.logoTECNM2; // Intenta con el segundo logo
-                }}
-              />
+              {!logoTECNMError ? (
+                <img 
+                  src={ASSETS.logoTECNM} 
+                  alt="TecNM" 
+                  className="lp-logo"
+                  onError={() => setLogoTECNMError(true)}
+                />
+              ) : (
+                <span style={{color:'#fff', fontSize:'40px'}}>🎓</span>
+              )}
             </div>
           </div>
 
@@ -384,27 +404,34 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Panel derecho con formulario */}
+        {/* ── Panel derecho con formulario ── */}
         <div className="lp-form-side">
           <div className="lp-card">
 
             {/* Logos para móvil */}
             <div className="lp-mobile-logos">
               <div className="lp-mobile-logo">
-                <img src={ASSETS.logoITSSNP} alt="ITSSNP" />
+                {!logoITSSNPError ? (
+                  <img src={ASSETS.logoITSSNP} alt="ITSSNP" />
+                ) : (
+                  <span style={{fontSize:'32px'}}>🏫</span>
+                )}
               </div>
               <div className="lp-mobile-divider" />
               <div className="lp-mobile-logo">
-                <img src={ASSETS.logoTECNM} alt="TecNM" />
+                {!logoTECNMError ? (
+                  <img src={ASSETS.logoTECNM} alt="TecNM" />
+                ) : (
+                  <span style={{fontSize:'32px'}}>🎓</span>
+                )}
               </div>
             </div>
 
             <h2 className="lp-card-title">Iniciar sesión</h2>
             <p className="lp-card-sub">
-              Ingresa tu número de control o usuario administrador
+              Ingresa tu número de control o usuario administrador para acceder al sistema
             </p>
 
-            {/* Error */}
             {error && (
               <div className="lp-error">
                 <span>⚠️</span>
@@ -414,7 +441,6 @@ export default function Login() {
 
             <form onSubmit={handleSubmit} noValidate>
 
-              {/* Usuario */}
               <div className="lp-field">
                 <label className="lp-label">Usuario / No. de control</label>
                 <div className="lp-input-wrap">
@@ -434,7 +460,6 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Contraseña */}
               <div className="lp-field">
                 <label className="lp-label">Contraseña</label>
                 <div className="lp-input-wrap">
@@ -464,7 +489,6 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Botón submit */}
               <button type="submit" className="lp-btn" disabled={cargando}>
                 {cargando ? (
                   <>
@@ -480,7 +504,7 @@ export default function Login() {
 
             <p className="lp-footer">
               Instituto Tecnológico Superior de la Sierra Norte de Puebla · TecNM<br />
-              ¿Problemas? Contacta a Control Escolar
+              ¿Problemas para acceder? Contacta a Control Escolar
             </p>
           </div>
         </div>

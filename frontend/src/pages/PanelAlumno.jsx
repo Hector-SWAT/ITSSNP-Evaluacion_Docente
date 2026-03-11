@@ -1,18 +1,56 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
-import { getPerfilAlumno, yaEvaluado } from "../services/evaluacionData"
+import { getPerfilAlumnoAPI, getEvaluacionesAlumnoAPI } from "../services/evaluacionData"
+
+// Importar assets (igual que en login)
+import logoITSSNP from "../assets/logo-itssnp.png"
+import logoTECNM  from "../assets/logo-tecnm.png"
+import iconUser   from "../assets/icon-user.png"
+import iconLock   from "../assets/icon-lock.png"
 
 export default function PanelAlumno() {
   const navigate         = useNavigate()
   const { user, logout } = useAuth()
 
-  const [perfil,  setPerfil]  = useState(null)
-  const [refresc, setRefresc] = useState(0)
+  const [perfil,    setPerfil]    = useState(null)
+  const [evaluaciones, setEvaluaciones] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [refresc,   setRefresc]   = useState(0)
 
-  /* Carga perfil del alumno */
+  // Fallbacks para assets
+  const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
+  const [logoTECNMFail,  setLogoTECNMFail]  = useState(false)
+  const [iconUserFail,   setIconUserFail]   = useState(false)
+  const [iconLockFail,   setIconLockFail]   = useState(false)
+
+  /* Carga perfil del alumno desde la API REAL */
   useEffect(() => {
-    if (user?.id) setPerfil(getPerfilAlumno(user.id))
+    if (!user?.id) return
+    
+    const cargarDatos = async () => {
+      setLoading(true)
+      try {
+        // Obtener perfil del alumno
+        const datosPerfil = await getPerfilAlumnoAPI(user.id)
+        setPerfil(datosPerfil)
+        
+        // Obtener estado de evaluaciones
+        const datosEval = await getEvaluacionesAlumnoAPI(user.id)
+        setEvaluaciones(datosEval.evaluaciones || [])
+        
+        console.log("✅ Datos cargados:", { 
+          perfil: datosPerfil,
+          evaluaciones: datosEval 
+        })
+      } catch (error) {
+        console.error("❌ Error cargando datos:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    cargarDatos()
   }, [user, refresc])
 
   /* Refresca al volver a la pestaña */
@@ -22,373 +60,535 @@ export default function PanelAlumno() {
     return () => window.removeEventListener("focus", fn)
   }, [])
 
+  // Verificar si un tutor ya fue evaluado
+  const yaEvaluado = (tutorId) => {
+    return evaluaciones.some(e => e.idTutor === tutorId && e.completada === true)
+  }
+
   const tutores     = perfil?.tutores ?? []
-  const completadas = tutores.filter(t => yaEvaluado(user?.id, t.id)).length
+  const completadas = tutores.filter(t => yaEvaluado(t.id)).length
   const total       = tutores.length
   const pct         = total === 0 ? 0 : Math.round((completadas / total) * 100)
   const todoListo   = total > 0 && completadas === total
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        background: 'linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%)'
+      }}>
+        <div style={{ textAlign: 'center', background: '#fff', padding: '40px', borderRadius: '20px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ 
+            width: '50px', 
+            height: '50px', 
+            border: '5px solid #e2e8f0', 
+            borderTop: '5px solid #2563eb', 
+            borderRadius: '50%', 
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 20px'
+          }}></div>
+          <p style={{ fontSize: '16px', color: '#0f172a', fontWeight: 500 }}>Cargando tus tutores...</p>
+        </div>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
 
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
 
       <style>{`
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body, #root { height: 100%; }
 
-        @keyframes _fadeUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes _barIn   { from{width:0} to{width:var(--pct)} }
-        @keyframes _pulse   { 0%,100%{opacity:.55} 50%{opacity:1} }
+        @keyframes fadeUp { 
+          from { opacity:0; transform:translateY(20px); } 
+          to { opacity:1; transform:translateY(0); } 
+        }
+        @keyframes spin { 
+          to { transform: rotate(360deg); } 
+        }
+        @keyframes barFill {
+          from { width: 0; }
+          to { width: var(--pct); }
+        }
 
         /* ══ Raíz ══ */
         .pa-root {
           font-family: 'DM Sans', sans-serif;
           min-height: 100dvh;
-          background: #eef2ff;
+          background: #f8fafc;
           display: flex; flex-direction: column;
         }
 
-        /* ══ Navbar ══ */
+        /* ══ Navbar con degradado igual al login ══ */
         .pa-nav {
-          background: linear-gradient(135deg, #0d2660 0%, #1648b8 55%, #0b7ec9 100%);
-          height: 62px; padding: 0 clamp(16px,4vw,48px);
+          background: linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%);
+          height: 70px; padding: 0 clamp(16px,4vw,48px);
           display: flex; align-items: center; justify-content: space-between;
-          box-shadow: 0 2px 18px rgba(0,0,0,.28);
+          box-shadow: 0 4px 20px rgba(0,0,0,0.25);
           position: sticky; top: 0; z-index: 10;
         }
         .pa-nav-brand {
-          display: flex; align-items: center; gap: 10px;
-          font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -.01em;
+          display: flex; align-items: center; gap: 16px;
         }
-        .pa-nav-dot {
-          width: 9px; height: 9px; border-radius: 50%;
-          background: #22c55e; box-shadow: 0 0 10px #22c55e;
+        .pa-nav-logos {
+          display: flex; align-items: center; gap: 12px;
         }
-        .pa-nav-right { display: flex; align-items: center; gap: 10px; }
-        .pa-nav-user {
-          font-size: 13px; color: rgba(255,255,255,.72);
-          max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        .pa-nav-logo {
+          height: 40px; width: auto;
+          filter: brightness(0) invert(1);
+          opacity: 0.95;
+        }
+        .pa-nav-divider {
+          width: 1px; height: 32px; background: rgba(255,255,255,0.3);
+        }
+        .pa-nav-title {
+          font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95);
+          letter-spacing: 0.3px;
+        }
+        .pa-nav-user-section {
+          display: flex; align-items: center; gap: 16px;
+        }
+        .pa-nav-user-info {
+          display: flex; align-items: center; gap: 8px;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 30px; padding: 6px 16px 6px 12px;
+        }
+        .pa-nav-user-icon {
+          font-size: 16px; opacity: 0.8;
+        }
+        .pa-nav-user-name {
+          font-size: 13px; font-weight: 500; color: #fff;
         }
         .pa-btn-logout {
-          background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
-          border-radius: 8px; padding: 5px 14px;
-          font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
-          color: #fff; cursor: pointer; transition: background .15s;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 8px; padding: 8px 16px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px; font-weight: 600; color: #fff;
+          cursor: pointer; transition: background 0.2s;
         }
-        .pa-btn-logout:hover { background: rgba(255,255,255,.24); }
+        .pa-btn-logout:hover {
+          background: rgba(255,255,255,0.24);
+        }
 
         /* ══ Cuerpo ══ */
         .pa-body {
           flex: 1;
-          padding: clamp(20px,4vw,44px) clamp(16px,4vw,48px);
-          max-width: 880px; width: 100%; margin: 0 auto;
-          display: flex; flex-direction: column; gap: 22px;
+          padding: clamp(24px,4vw,48px) clamp(16px,4vw,48px);
+          max-width: 1200px; width: 100%; margin: 0 auto;
+          display: flex; flex-direction: column; gap: 24px;
         }
 
-        /* ══ Hero card ══ */
+        /* ══ Hero card con mismo estilo del login ══ */
         .pa-hero {
-          background: linear-gradient(135deg, #0d2660 0%, #1648b8 55%, #0b7ec9 100%);
-          border-radius: 22px; padding: clamp(24px,4vw,40px);
+          background: linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%);
+          border-radius: 24px; padding: 32px 36px;
           position: relative; overflow: hidden;
-          animation: _fadeUp .35s ease both;
+          animation: fadeUp 0.45s ease both;
+          box-shadow: 0 20px 40px rgba(11,31,74,0.25);
         }
         .pa-hero::before {
           content: ''; position: absolute; inset: 0;
-          background-image: radial-gradient(circle, rgba(255,255,255,.08) 1px, transparent 1px);
-          background-size: 24px 24px; pointer-events: none;
+          background: radial-gradient(circle at 30% 70%, rgba(255,255,255,0.08) 0%, transparent 60%);
+          pointer-events: none;
         }
-        .pa-hero-ring1 {
-          position: absolute; width: 340px; height: 340px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.07);
-          right: -100px; top: -120px; pointer-events: none;
+        .pa-hero-content {
+          position: relative; z-index: 1;
+          display: flex; justify-content: space-between; align-items: flex-start;
+          flex-wrap: wrap; gap: 24px;
         }
-        .pa-hero-ring2 {
-          position: absolute; width: 220px; height: 220px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.05);
-          left: -60px; bottom: -80px; pointer-events: none;
+        .pa-hero-info h1 {
+          font-size: clamp(24px, 3vw, 32px); font-weight: 800; color: #fff;
+          line-height: 1.2; margin-bottom: 12px;
+        }
+        .pa-hero-badges {
+          display: flex; flex-wrap: wrap; gap: 10px;
+        }
+        .pa-hero-badge {
+          display: inline-flex; align-items: center; gap: 8px;
+          background: rgba(255,255,255,0.12);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 30px; padding: 6px 16px;
+          font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.95);
+        }
+        .pa-hero-stats {
+          background: rgba(255,255,255,0.10);
+          border: 1.5px solid rgba(255,255,255,0.20);
+          border-radius: 18px; padding: 20px 28px;
+          text-align: center;
+        }
+        .pa-stats-number {
+          font-size: 36px; font-weight: 800; color: #fff;
+          line-height: 1;
+        }
+        .pa-stats-label {
+          font-size: 12px; color: rgba(255,255,255,0.65);
+          text-transform: uppercase; letter-spacing: 0.5px;
+          margin-top: 6px;
+        }
+        .pa-stats-divider {
+          font-size: 24px; color: rgba(255,255,255,0.3);
+          margin: 0 4px;
         }
 
-        .pa-hero-top {
-          display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 16px; margin-bottom: 26px;
-          position: relative; z-index: 1; flex-wrap: wrap;
+        /* Barra de progreso */
+        .pa-progress {
+          margin-top: 28px;
         }
-        .pa-hero-title {
-          font-size: clamp(20px,2.5vw,28px); font-weight: 800;
-          color: #fff; letter-spacing: -.025em; line-height: 1.2;
-          margin-bottom: 6px;
+        .pa-progress-header {
+          display: flex; justify-content: space-between;
+          font-size: 14px; color: rgba(255,255,255,0.75);
+          margin-bottom: 8px;
         }
-        .pa-hero-meta {
-          display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+        .pa-progress-percent {
+          font-weight: 700; color: #7dd3fc;
         }
-        .pa-hero-tag {
-          display: inline-flex; align-items: center; gap: 5px;
-          background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18);
-          border-radius: 8px; padding: 4px 10px;
-          font-size: 12px; font-weight: 600; color: rgba(255,255,255,.88);
+        .pa-progress-track {
+          height: 10px; background: rgba(255,255,255,0.15);
+          border-radius: 99px; overflow: hidden;
         }
-        .pa-hero-tag-dot {
-          width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
-        }
-        .pa-hero-score {
-          background: rgba(255,255,255,.10); border: 1.5px solid rgba(255,255,255,.20);
-          border-radius: 14px; padding: 12px 18px; text-align: center; flex-shrink: 0;
-        }
-        .pa-score-num  { font-size: 26px; font-weight: 800; color: #fff; line-height: 1; }
-        .pa-score-sep  { font-size: 16px; color: rgba(255,255,255,.45); margin: 0 2px; }
-        .pa-score-lbl  { font-size: 11px; color: rgba(255,255,255,.55); text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
-
-        /* Barra progreso hero */
-        .pa-prog { position: relative; z-index: 1; }
-        .pa-prog-row {
-          display: flex; justify-content: space-between; align-items: center;
-          font-size: 12.5px; color: rgba(255,255,255,.65); margin-bottom: 8px;
-        }
-        .pa-prog-pct  { font-weight: 700; color: #86efac; }
-        .pa-prog-track { height: 9px; background: rgba(255,255,255,.15); border-radius: 99px; overflow: hidden; }
-        .pa-prog-fill  {
+        .pa-progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, #22c55e, #86efac);
+          background: linear-gradient(90deg, #7dd3fc, #38bdf8);
           border-radius: 99px;
           width: var(--pct);
-          animation: _barIn .8s cubic-bezier(.16,1,.3,1) .1s both;
-          transition: width .5s ease;
+          animation: barFill 1s cubic-bezier(0.16,1,0.3,1) both;
         }
 
-        /* ══ Banner finalizado ══ */
-        .pa-done {
-          display: flex; align-items: center; gap: 14px;
-          background: #f0fdf4; border: 1.5px solid #86efac;
-          border-radius: 16px; padding: 18px 22px;
-          animation: _fadeUp .3s ease both;
+        /* Banner completado */
+        .pa-completed {
+          display: flex; align-items: center; gap: 20px;
+          background: #f0fdf4; border: 2px solid #86efac;
+          border-radius: 20px; padding: 24px 28px;
+          animation: fadeUp 0.4s ease both;
         }
-        .pa-done-icon  { font-size: 30px; flex-shrink: 0; }
-        .pa-done-title { font-size: 15px; font-weight: 800; color: #14532d; }
-        .pa-done-sub   { font-size: 13px; color: #16a34a; margin-top: 3px; line-height: 1.5; }
-
-        /* ══ Sección ══ */
-        .pa-section-hdr {
-          font-size: 11.5px; font-weight: 800; color: #64748b;
-          text-transform: uppercase; letter-spacing: .07em;
-          margin-bottom: 12px;
+        .pa-completed-icon { font-size: 36px; }
+        .pa-completed-text h3 {
+          font-size: 18px; font-weight: 800; color: #166534;
+          margin-bottom: 4px;
+        }
+        .pa-completed-text p {
+          font-size: 14px; color: #16a34a;
         }
 
-        /* ══ Grid de tutores ══ */
+        /* Sección de tutores */
+        .pa-section-title {
+          display: flex; align-items: center; gap: 12px;
+          margin-bottom: 20px;
+        }
+        .pa-section-title h2 {
+          font-size: 20px; font-weight: 700; color: #0f172a;
+        }
+        .pa-section-count {
+          background: #e2e8f0; border-radius: 30px;
+          padding: 4px 12px; font-size: 13px; font-weight: 600;
+          color: #475569;
+        }
+
+        /* Grid de tutores */
         .pa-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-          gap: 14px;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 20px;
         }
 
         /* Card de tutor */
         .pa-card {
-          background: #fff;
-          border: 1.5px solid #e8eeff;
-          border-radius: 18px; padding: 20px;
-          display: flex; flex-direction: column; gap: 14px;
-          animation: _fadeUp .4s ease both;
-          transition: box-shadow .2s, transform .2s, border-color .2s;
+          background: #fff; border: 1.5px solid #e2e8f0;
+          border-radius: 20px; padding: 24px;
+          transition: all 0.2s ease;
+          animation: fadeUp 0.4s ease both;
         }
-        .pa-card:not(.pa-card--done):hover {
-          box-shadow: 0 8px 30px rgba(30,64,175,.11);
+        .pa-card:hover:not(.pa-card--done) {
+          border-color: #2563eb; box-shadow: 0 12px 30px rgba(37,99,235,0.12);
           transform: translateY(-2px);
-          border-color: #bfcfff;
         }
         .pa-card--done {
-          background: #fafffe;
-          border-color: #bbf7d0;
-          opacity: .84;
+          background: #f8fafc; border-color: #86efac;
+          opacity: 0.9;
         }
 
-        .pa-card-top  { display: flex; align-items: flex-start; gap: 12px; }
+        .pa-card-header {
+          display: flex; align-items: flex-start; gap: 16px;
+          margin-bottom: 16px;
+        }
         .pa-avatar {
-          width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0;
+          width: 56px; height: 56px; border-radius: 16px;
+          background: linear-gradient(135deg, #dbeafe, #bfdbfe);
           display: flex; align-items: center; justify-content: center;
-          font-size: 18px; font-weight: 800;
-          background: linear-gradient(135deg, #e8eeff, #c7d7ff);
-          color: #1e40af;
+          font-size: 20px; font-weight: 700; color: #1e40af;
+          flex-shrink: 0;
         }
-        .pa-avatar--done { background: linear-gradient(135deg, #d1fae5, #6ee7b7); color: #065f46; }
+        .pa-avatar--done {
+          background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+          color: #166534;
+        }
+        .pa-card-info {
+          flex: 1; min-width: 0;
+        }
+        .pa-card-name {
+          font-size: 16px; font-weight: 700; color: #0f172a;
+          margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .pa-card-materia {
+          font-size: 14px; color: #64748b;
+        }
 
-        .pa-card-info  { flex: 1; min-width: 0; }
-        .pa-card-name  {
-          font-size: 14px; font-weight: 700; color: #0f172a;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        .pa-card-tags {
+          display: flex; flex-wrap: wrap; gap: 8px;
+          margin-bottom: 18px;
         }
-        .pa-card-mat   { font-size: 12px; color: #64748b; margin-top: 2px; }
-        .pa-card-check { font-size: 20px; flex-shrink: 0; }
-
-        .pa-card-tags  { display: flex; flex-wrap: wrap; gap: 6px; }
-        .pa-card-tag   {
-          background: #f1f5ff; border-radius: 6px; padding: 3px 8px;
-          font-size: 11px; font-weight: 600; color: #3b4fd8;
+        .pa-tag {
+          background: #f1f5f9; border-radius: 8px;
+          padding: 4px 12px; font-size: 12px; font-weight: 600;
+          color: #475569;
         }
-        .pa-card-tag--green {
+        .pa-tag--green {
           background: #dcfce7; color: #166534;
         }
 
-        /* Botón evaluar */
         .pa-card-btn {
-          width: 100%; height: 44px; border-radius: 11px; border: none;
-          cursor: pointer; font-family: 'DM Sans', sans-serif;
-          font-size: 13.5px; font-weight: 700;
-          display: flex; align-items: center; justify-content: center; gap: 7px;
-          transition: all .18s;
+          width: 100%; height: 48px; border: none; border-radius: 12px;
+          font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
+          cursor: pointer; transition: all 0.2s;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
         }
         .pa-card-btn--pending {
-          background: linear-gradient(135deg, #1e40af, #2563eb 55%, #0891b2);
-          color: #fff; box-shadow: 0 3px 14px rgba(37,99,235,.28);
+          background: linear-gradient(135deg, #1648b8, #2563eb);
+          color: #fff; box-shadow: 0 4px 16px rgba(37,99,235,0.3);
         }
         .pa-card-btn--pending:hover {
-          transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,.38);
+          opacity: 0.95; transform: translateY(-2px);
+          box-shadow: 0 6px 22px rgba(37,99,235,0.4);
         }
         .pa-card-btn--done {
-          background: #f0fdf4; color: #16a34a;
-          border: 1.5px solid #86efac; cursor: default;
+          background: #f0fdf4; color: #166534;
+          border: 2px solid #86efac; cursor: default;
         }
 
-        /* ══ Footer ══ */
+        /* Mensaje sin tutores */
+        .pa-empty {
+          background: #fff; border: 2px dashed #cbd5e1;
+          border-radius: 24px; padding: 48px; text-align: center;
+        }
+        .pa-empty p {
+          font-size: 16px; color: #64748b;
+        }
+
+        /* Footer */
         .pa-footer {
-          text-align: center; padding: 18px 0;
-          font-size: 11px; color: #94a3b8;
+          margin-top: 32px; padding: 24px 0;
+          text-align: center; font-size: 12px; color: #94a3b8;
+          border-top: 1px solid #e2e8f0;
         }
 
-        @media (max-width: 600px) {
-          .pa-grid { grid-template-columns: 1fr; }
-          .pa-hero-top { flex-direction: column; }
+        /* Responsive */
+        @media (max-width: 700px) {
+          .pa-nav { height: auto; padding: 12px 16px; flex-direction: column; gap: 12px; }
+          .pa-nav-brand { width: 100%; justify-content: center; }
+          .pa-nav-user-section { width: 100%; justify-content: center; flex-wrap: wrap; }
+          .pa-hero-content { flex-direction: column; align-items: stretch; }
+          .pa-hero-stats { align-self: flex-start; }
         }
       `}</style>
 
       <div className="pa-root">
 
-        {/* ── Navbar ── */}
+        {/* ── Navbar con logos ITSSNP/TecNM ── */}
         <nav className="pa-nav">
           <div className="pa-nav-brand">
-            <span className="pa-nav-dot" />
-            SICOT · Evaluación Docente
+            <div className="pa-nav-logos">
+              {!logoITSSNPFail ? (
+                <img 
+                  src={logoITSSNP} 
+                  alt="ITSSNP" 
+                  className="pa-nav-logo"
+                  onError={() => setLogoITSSNPFail(true)}
+                />
+              ) : (
+                <span style={{color:'#fff', fontSize:'20px'}}>🏫</span>
+              )}
+              <div className="pa-nav-divider" />
+              {!logoTECNMFail ? (
+                <img 
+                  src={logoTECNM} 
+                  alt="TecNM" 
+                  className="pa-nav-logo"
+                  onError={() => setLogoTECNMFail(true)}
+                />
+              ) : (
+                <span style={{color:'#fff', fontSize:'20px'}}>🎓</span>
+              )}
+            </div>
+            <span className="pa-nav-title">SICOT · Evaluación Docente</span>
           </div>
-          <div className="pa-nav-right">
-            <span className="pa-nav-user">{user?.nombre}</span>
-            <button className="pa-btn-logout" onClick={logout}>Cerrar sesión</button>
+
+          <div className="pa-nav-user-section">
+            <div className="pa-nav-user-info">
+              {!iconUserFail ? (
+                <img src={iconUser} alt="" style={{width:'16px', height:'16px', filter:'brightness(0) invert(1)'}} 
+                     onError={() => setIconUserFail(true)} />
+              ) : (
+                <span className="pa-nav-user-icon">👤</span>
+              )}
+              <span className="pa-nav-user-name">{user?.nombre || 'Usuario'}</span>
+            </div>
+            <button className="pa-btn-logout" onClick={logout}>
+              Cerrar sesión
+            </button>
           </div>
         </nav>
 
         <div className="pa-body">
 
-          {/* ── Hero ── */}
+          {/* ── Hero con información del alumno ── */}
           <div className="pa-hero" style={{ "--pct": `${pct}%` }}>
-            <div className="pa-hero-ring1" /><div className="pa-hero-ring2" />
-
-            <div className="pa-hero-top">
-              <div>
-                <h1 className="pa-hero-title">Evaluación de tutores</h1>
-                <div className="pa-hero-meta">
-                  <span className="pa-hero-tag">
-                    <span style={{opacity:.7}}>No. Control:</span>&nbsp;
-                    <strong style={{color:"#fff"}}>{user?.id}</strong>
+            <div className="pa-hero-content">
+              <div className="pa-hero-info">
+                <h1>Evaluación de tutores</h1>
+                <div className="pa-hero-badges">
+                  <span className="pa-hero-badge">
+                    <span>👤</span> No. Control: <strong>{user?.id}</strong>
                   </span>
                   {perfil && (
-                    <span className="pa-hero-tag">
-                      <span className="pa-hero-tag-dot" />
-                      {perfil.siglas} · Semestre {perfil.semestre}
-                    </span>
+                    <>
+                      <span className="pa-hero-badge">
+                        <span>📚</span> {perfil.siglas} · Semestre {perfil.semestre}
+                      </span>
+                      <span className="pa-hero-badge">
+                        <span>📊</span> {total} tutor{total !== 1 ? 'es' : ''}
+                      </span>
+                    </>
                   )}
-                  <span className="pa-hero-tag">Periodo activo</span>
                 </div>
                 {perfil && (
-                  <p style={{fontSize:12, color:"rgba(255,255,255,.50)", marginTop:6}}>
+                  <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: '12px', fontSize: '14px' }}>
                     {perfil.carrera}
                   </p>
                 )}
               </div>
-              <div className="pa-hero-score">
+              <div className="pa-hero-stats">
                 <div>
-                  <span className="pa-score-num">{completadas}</span>
-                  <span className="pa-score-sep">/</span>
-                  <span className="pa-score-num" style={{opacity:.5}}>{total}</span>
+                  <span className="pa-stats-number">{completadas}</span>
+                  <span className="pa-stats-divider">/</span>
+                  <span className="pa-stats-number" style={{ opacity: 0.5 }}>{total}</span>
                 </div>
-                <p className="pa-score-lbl">Evaluaciones</p>
+                <div className="pa-stats-label">Evaluaciones completadas</div>
               </div>
             </div>
 
-            <div className="pa-prog">
-              <div className="pa-prog-row">
+            <div className="pa-progress">
+              <div className="pa-progress-header">
                 <span>Progreso general</span>
-                <span className="pa-prog-pct">{pct}%</span>
+                <span className="pa-progress-percent">{pct}%</span>
               </div>
-              <div className="pa-prog-track">
-                <div className="pa-prog-fill" />
+              <div className="pa-progress-track">
+                <div className="pa-progress-fill" />
               </div>
             </div>
           </div>
 
-          {/* ── Banner completado ── */}
+          {/* ── Banner cuando completa todo ── */}
           {todoListo && (
-            <div className="pa-done">
-              <span className="pa-done-icon">🎉</span>
-              <div>
-                <p className="pa-done-title">¡Has completado todas las evaluaciones!</p>
-                <p className="pa-done-sub">
-                  Gracias por tu participación. Tus respuestas son completamente anónimas y confidenciales.
-                </p>
+            <div className="pa-completed">
+              <span className="pa-completed-icon">🎉</span>
+              <div className="pa-completed-text">
+                <h3>¡Felicidades! Completaste todas las evaluaciones</h3>
+                <p>Gracias por tu participación. Tus respuestas son anónimas y confidenciales.</p>
               </div>
             </div>
           )}
 
-          {/* ── Grid de tutores ── */}
+          {/* ── Lista de tutores ── */}
           <div>
-            <p className="pa-section-hdr">Tutores asignados este periodo</p>
-            <div className="pa-grid">
-              {tutores.map((tutor, i) => {
-                const hecho   = yaEvaluado(user?.id, tutor.id)
-                const inicial = tutor.nombre.replace(/^(Dr\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "").trim()[0] ?? "T"
-                return (
-                  <div
-                    key={tutor.id}
-                    className={`pa-card${hecho ? " pa-card--done" : ""}`}
-                    style={{ animationDelay: `${i * 0.08}s` }}
-                  >
-                    {/* Cabecera */}
-                    <div className="pa-card-top">
-                      <div className={`pa-avatar${hecho ? " pa-avatar--done" : ""}`}>
-                        {inicial}
-                      </div>
-                      <div className="pa-card-info">
-                        <p className="pa-card-name">{tutor.nombre}</p>
-                        <p className="pa-card-mat">{tutor.materia}</p>
-                      </div>
-                      <span className="pa-card-check">{hecho ? "✅" : "📋"}</span>
-                    </div>
-
-                    {/* Tags */}
-                    <div className="pa-card-tags">
-                      <span className="pa-card-tag">{tutor.grupo}</span>
-                      {hecho && <span className="pa-card-tag pa-card-tag--green">Completada</span>}
-                    </div>
-
-                    {/* Botón */}
-                    <button
-                      className={`pa-card-btn pa-card-btn--${hecho ? "done" : "pending"}`}
-                      disabled={hecho}
-                      onClick={() =>
-                        navigate(`/evaluacion/${tutor.id}`, {
-                          state: { tutor, numControl: user?.id },
-                        })
-                      }
-                    >
-                      {hecho ? "✓ Evaluación completada" : "Iniciar evaluación →"}
-                    </button>
-                  </div>
-                )
-              })}
+            <div className="pa-section-title">
+              <h2>Tus tutores asignados</h2>
+              <span className="pa-section-count">{total}</span>
             </div>
+
+            {total === 0 ? (
+              <div className="pa-empty">
+                <p>No tienes tutores asignados en este periodo.</p>
+                <p style={{ fontSize: '13px', marginTop: '8px', color: '#94a3b8' }}>
+                  Si crees que esto es un error, contacta a tu coordinador académico.
+                </p>
+              </div>
+            ) : (
+              <div className="pa-grid">
+                {tutores.map((tutor, i) => {
+                  const hecho = yaEvaluado(tutor.id)
+                  const inicial = tutor.nombre
+                    .replace(/^(Dr\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "")
+                    .trim()[0] || "T"
+                  
+                  return (
+                    <div
+                      key={tutor.id}
+                      className={`pa-card${hecho ? " pa-card--done" : ""}`}
+                      style={{ animationDelay: `${i * 0.06}s` }}
+                    >
+                      <div className="pa-card-header">
+                        <div className={`pa-avatar${hecho ? " pa-avatar--done" : ""}`}>
+                          {inicial}
+                        </div>
+                        <div className="pa-card-info">
+                          <div className="pa-card-name">{tutor.nombre}</div>
+                          <div className="pa-card-materia">{tutor.materia || 'Sin materia'}</div>
+                        </div>
+                      </div>
+
+                      <div className="pa-card-tags">
+                        <span className="pa-tag">
+                          {!iconLockFail ? (
+                            <img src={iconLock} alt="" style={{width:'12px', height:'12px', marginRight:'4px', opacity:0.6}} 
+                                 onError={() => setIconLockFail(true)} />
+                          ) : (
+                            <span style={{marginRight:'4px'}}>🔒</span>
+                          )}
+                          Grupo {tutor.grupo}
+                        </span>
+                        {hecho && (
+                          <span className="pa-tag pa-tag--green">
+                            ✓ Completada
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        className={`pa-card-btn pa-card-btn--${hecho ? "done" : "pending"}`}
+                        disabled={hecho}
+                        onClick={() =>
+                          navigate(`/evaluacion/${tutor.id}`, {
+                            state: { 
+                              tutor, 
+                              numControl: user?.id,
+                              idGrupo: tutor.id_grupo 
+                            },
+                          })
+                        }
+                      >
+                        {hecho ? "✓ Evaluación completada" : "Iniciar evaluación →"}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 
         <footer className="pa-footer">
-          © 2026 · ITSSNP · Sistema de Evaluación Docente · SWATCorps
+          <p>© 2026 · ITSSNP · Sistema de Evaluación Docente · TecNM</p>
+          <p style={{ marginTop: '4px' }}>Instituto Tecnológico Superior de la Sierra Norte de Puebla</p>
         </footer>
       </div>
     </>

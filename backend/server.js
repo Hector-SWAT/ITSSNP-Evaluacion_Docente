@@ -258,27 +258,40 @@ app.get("/api/db-test", async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   MIDDLEWARES DE AUTH
+   MIDDLEWARES DE AUTH (CORREGIDOS CON LOGGING)
 ══════════════════════════════════════════════════════════════ */
-const JWT_SECRET = process.env.JWT_SECRET || "sicot_secret_2026"
+const JWT_SECRET = process.env.JWT_SECRET || "sicot_itssnp_2026_secreto" // ¡DEBE COINCIDIR!
 
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization
-  if (!header?.startsWith("Bearer ")) {
+  console.log("🔍 Auth Header recibido:", header ? 'Presente' : 'Ausente')
+  
+  if (!header || !header.startsWith("Bearer ")) {
+    console.log("❌ No autorizado: Header inválido")
     return res.status(401).json({ error: "No autorizado" })
   }
+  
+  const token = header.slice(7)
+  console.log("🔍 Token recibido (primeros 20):", token.substring(0, 20) + '...')
+  
   try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET)
+    const decoded = jwt.verify(token, JWT_SECRET)
+    console.log("✅ Token verificado correctamente:", decoded)
+    req.user = decoded
     next()
-  } catch {
+  } catch (error) {
+    console.log("❌ Token inválido:", error.message)
     return res.status(401).json({ error: "Token inválido o expirado" })
   }
 }
 
 function soloAdmin(req, res, next) {
-  if (req.user?.tipo !== "admin") {
+  console.log("🔍 Verificando permisos de admin:", req.user)
+  if (!req.user || req.user.tipo !== "admin") {
+    console.log("❌ Acceso denegado - No es admin")
     return res.status(403).json({ error: "Acceso denegado" })
   }
+  console.log("✅ Usuario es admin, acceso permitido")
   next()
 }
 
@@ -661,16 +674,27 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.query
   
+  console.log(`📊 Dashboard - Usuario autenticado:`, req.user)
+  console.log(`📊 Solicitando resultados - Docente: ${idDocente}, Periodo: ${idPeriodo}`)
+  
   if (!idDocente || !idPeriodo) {
     return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
   }
 
   try {
+    // Verificar que los parámetros son números válidos
+    const docenteId = parseInt(idDocente)
+    const periodoId = parseInt(idPeriodo)
+    
+    if (isNaN(docenteId) || isNaN(periodoId)) {
+      return res.status(400).json({ error: "IDs inválidos" })
+    }
+
     const [[docente]] = await pool.query(`
       SELECT id_doce, CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre
       FROM   docente 
       WHERE  id_doce = ?
-    `, [idDocente])
+    `, [docenteId])
 
     if (!docente) {
       return res.status(404).json({ error: "Docente no encontrado." })
@@ -678,33 +702,51 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
 
     const [[periodo]] = await pool.query(
       `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, 
-      [idPeriodo]
+      [periodoId]
     )
+
+    // Si no hay periodo, devolver estructura vacía
+    if (!periodo) {
+      return res.json({
+        docente,
+        periodo: { id: periodoId, nombre: "Periodo no encontrado" },
+        totalAlumnos: 0,
+        totalCompletaron: 0,
+        totalFaltantes: 0,
+        completaron: [],
+        faltantes: [],
+        promediosCat: {},
+        promedioGeneral: 0,
+        clasificacion: "SIN DATOS"
+      })
+    }
 
     const [promediosCat] = await pool.query(`
       SELECT p.id_categoria AS idCategoria, 
-             ROUND(AVG(re.calificacion), 2) AS promedio,
+             ROUND(COALESCE(AVG(re.calificacion), 0), 2) AS promedio,
              COUNT(DISTINCT re.id_evaluacion) AS totalEvaluaciones
       FROM   respuesta_evaluacion re
-      JOIN   pregunta p             ON p.id_pregunta   = re.id_pregunta
-      JOIN   evaluacion_docente ed  ON ed.id_evaluacion = re.id_evaluacion
-      WHERE  ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
+      RIGHT JOIN   pregunta p             ON p.id_pregunta   = re.id_pregunta AND 
+                                            re.id_evaluacion IN (
+                                              SELECT id_evaluacion FROM evaluacion_docente 
+                                              WHERE id_doce = ? AND id_perio = ? AND estado = 3
+                                            )
+      WHERE p.id_encuesta = (SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1)
       GROUP  BY p.id_categoria 
       ORDER BY p.id_categoria
-    `, [idDocente, idPeriodo])
+    `, [docenteId, periodoId])
 
     const [[counts]] = await pool.query(`
       SELECT
         COUNT(DISTINCT i.num_control) AS total_alumnos,
-        SUM(CASE WHEN ed.estado = 3 THEN 1 ELSE 0 END) AS completaron
+        COALESCE(SUM(CASE WHEN ed.estado = 3 THEN 1 ELSE 0 END), 0) AS completaron
       FROM inscripcion i
       JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
       LEFT JOIN evaluacion_docente ed
-        ON ed.num_control = i.num_control AND ed.id_doce = ? AND ed.id_perio = ?
+        ON ed.num_control = i.num_control AND ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
       WHERE i.activa = 1
-    `, [idDocente, idPeriodo, idDocente, idPeriodo])
+    `, [docenteId, periodoId, docenteId, periodoId])
 
-    // CORREGIDO: Reemplazar a.apellidos por a.a_paterno, a.a_materno
     const [completaron] = await pool.query(`
       SELECT DISTINCT a.num_control AS numControl, 
                       a.nombre_completo AS nombre, 
@@ -714,9 +756,8 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       JOIN   carrera c ON c.id_carre = a.id_carre
       WHERE  ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
       ORDER BY a.a_paterno, a.a_materno
-    `, [idDocente, idPeriodo])
+    `, [docenteId, periodoId])
 
-    // CORREGIDO: Reemplazar a.apellidos por a.a_paterno, a.a_materno
     const [faltantes] = await pool.query(`
       SELECT DISTINCT a.num_control AS numControl, 
                       a.nombre_completo AS nombre, 
@@ -731,9 +772,9 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
           WHERE ed2.id_doce = ? AND ed2.id_perio = ? AND ed2.estado = 3
         )
       ORDER BY a.a_paterno, a.a_materno
-    `, [idDocente, idPeriodo, idDocente, idPeriodo])
+    `, [docenteId, periodoId, docenteId, periodoId])
 
-    const vals = promediosCat.map(p => Number(p.promedio))
+    const vals = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
     const promedioGeneral = vals.length
       ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) 
       : 0
@@ -742,7 +783,8 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
                         : promedioGeneral >= 3.5 ? "MUY BUENO"
                         : promedioGeneral >= 2.5 ? "BUENO"
                         : promedioGeneral >= 1.5 ? "REGULAR"
-                        : "DEFICIENTE"
+                        : promedioGeneral > 0 ? "DEFICIENTE"
+                        : "SIN DATOS"
 
     return res.json({
       docente, 
@@ -758,8 +800,8 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
     })
 
   } catch (err) {
-    console.error("Error en /api/dashboard/resultados:", err)
-    return res.status(500).json({ error: "Error interno." })
+    console.error("❌ Error en /api/dashboard/resultados:", err)
+    return res.status(500).json({ error: "Error interno: " + err.message })
   }
 })
 

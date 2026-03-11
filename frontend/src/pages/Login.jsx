@@ -2,13 +2,19 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 
-// Importar assets con fondo transparente
-import logoITSSNP from "../assets/logo-itssnp.png"
-import logoTECNM  from "../assets/logo-tecnm.png"
-import iconUser   from "../assets/icon-user.png"
-import iconLock   from "../assets/icon-lock.png"
-import iconEye    from "../assets/icon-eye.png"
-import iconEyeOff from "../assets/icon-eye-off.png"
+// URLs de PostImages para todos los assets
+const ASSETS = {
+  logoITSSNP: "https://i.postimg.cc/YhqbKr76/logo-itssnp.png",
+  logoITSSNP2: "https://i.postimg.cc/Xp7QSjW9/logo-itssnp2.png",
+  logoTECNM: "https://i.postimg.cc/ykYv41K5/logo-tecnm.png",
+  logoTECNM2: "https://i.postimg.cc/QHx0G8Dz/logo-tecnm2.png",
+  iconUser: "https://i.postimg.cc/hh0p5Jkx/icon-user.png",
+  iconLock: "https://i.postimg.cc/kDyfpV0b/icon-lock.png",
+  iconEye: "https://i.postimg.cc/K45JHK6T/icon-eye.png",
+  iconEyeOff: "https://i.postimg.cc/DmcBMW9b/icon-eye-off.png",
+  logoInfo: "https://i.postimg.cc/D8yBkvhW/Logo-Info.jpg",
+  logoInfo2: "https://i.postimg.cc/BXQM9S35/Logo-Info2.png"
+}
 
 export default function Login() {
   const navigate  = useNavigate()
@@ -20,7 +26,7 @@ export default function Login() {
   const [cargando,    setCargando]    = useState(false)
   const [verPassword, setVerPassword] = useState(false)
 
-  // Fallbacks para assets
+  // Fallbacks para assets si falla la URL
   const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
   const [logoTECNMFail,  setLogoTECNMFail]  = useState(false)
   const [iconUserFail,   setIconUserFail]   = useState(false)
@@ -28,7 +34,6 @@ export default function Login() {
   const [iconEyeFail,    setIconEyeFail]    = useState(false)
   const [iconEyeOffFail, setIconEyeOffFail] = useState(false)
 
-  /* ─── Submit ─────────────────────────────────────────────── */
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!usuario.trim() || !password) {
@@ -77,7 +82,7 @@ export default function Login() {
           grid-template-columns: 55% 45%;
         }
 
-        /* ── Panel izquierdo con degradado institucional ── */
+        /* ── Panel izquierdo ── */
         .lp-brand {
           background: linear-gradient(155deg, #0b1f4a 0%, #1648b8 60%, #0b7ec9 100%);
           display: flex; flex-direction: column;
@@ -92,7 +97,6 @@ export default function Login() {
           pointer-events: none;
         }
 
-        /* Contenedor de logos - MEJORADO para imágenes sin fondo */
         .lp-logos {
           display: flex; align-items: center; gap: 32px;
           position: relative; z-index: 2;
@@ -101,10 +105,11 @@ export default function Login() {
           display: flex; align-items: center; justify-content: center;
         }
         .lp-logo {
-          height: 70px;
+          height: 80px;
           width: auto;
+          max-width: 180px;
           object-fit: contain;
-          filter: brightness(1.1); /* Aclara un poco para mejor contraste */
+          filter: brightness(1.1) drop-shadow(0 4px 8px rgba(0,0,0,0.2));
           transition: transform 0.2s ease;
         }
         .lp-logo:hover {
@@ -112,11 +117,10 @@ export default function Login() {
         }
         .lp-divider {
           width: 2px;
-          height: 50px;
+          height: 60px;
           background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.5), transparent);
         }
 
-        /* Texto institucional */
         .lp-brand-text {
           text-align: center;
           position: relative; z-index: 2;
@@ -135,10 +139,7 @@ export default function Login() {
         }
         .lp-title span {
           color: #7dd3fc;
-          font-weight: 800;
         }
-
-        /* Badge informativo */
         .lp-badge {
           display: inline-flex; align-items: center; gap: 8px;
           background: rgba(255,255,255,0.12);
@@ -149,14 +150,14 @@ export default function Login() {
           margin-top: 16px;
         }
 
-        /* ── Panel derecho con formulario ── */
+        /* ── Panel derecho ── */
         .lp-form-side {
           background: #fff;
           display: flex; align-items: center; justify-content: center;
           padding: 40px clamp(24px, 5vw, 64px);
         }
         .lp-card {
-          width: 100%; max-width: 400px;
+          width: 100%; max-width: 420px;
           animation: fadeUp 0.45s ease both;
         }
         .lp-card-title {
@@ -169,7 +170,6 @@ export default function Login() {
           line-height: 1.6;
         }
 
-        /* Campos del formulario con iconos */
         .lp-field { 
           margin-bottom: 22px; 
         }
@@ -183,7 +183,6 @@ export default function Login() {
           position: relative; 
         }
 
-        /* Icono dentro del input - MEJORADO */
         .lp-input-icon {
           position: absolute; left: 14px; top: 50%; 
           transform: translateY(-50%);
@@ -195,12 +194,12 @@ export default function Login() {
           width: 100%; height: 100%;
           object-fit: contain;
           opacity: 0.5;
-          filter: brightness(0); /* Hace los iconos negros */
+          filter: brightness(0);
         }
 
         .lp-input {
           width: 100%; 
-          padding: 14px 16px 14px 48px;
+          padding: 15px 16px 15px 48px;
           border: 1.5px solid #e2e8f0; 
           border-radius: 14px;
           font-family: 'DM Sans', sans-serif; 
@@ -219,7 +218,6 @@ export default function Login() {
           padding-right: 48px;
         }
 
-        /* Botón ojo - MEJORADO */
         .lp-eye-btn {
           position: absolute; right: 12px; top: 50%; 
           transform: translateY(-50%);
@@ -238,7 +236,6 @@ export default function Login() {
           filter: brightness(0);
         }
 
-        /* Mensaje de error */
         .lp-error {
           display: flex; align-items: center; gap: 10px;
           background: #fef2f2; 
@@ -251,7 +248,6 @@ export default function Login() {
           animation: shake 0.4s ease;
         }
 
-        /* Botón principal */
         .lp-btn {
           width: 100%; 
           padding: 16px;
@@ -276,9 +272,6 @@ export default function Login() {
           transform: translateY(-2px); 
           box-shadow: 0 8px 24px rgba(37,99,235,0.45); 
         }
-        .lp-btn:active:not(:disabled) { 
-          transform: translateY(0); 
-        }
         .lp-btn:disabled { 
           opacity: 0.65; 
           cursor: not-allowed; 
@@ -291,7 +284,6 @@ export default function Login() {
           animation: spin 0.7s linear infinite;
         }
 
-        /* Footer */
         .lp-footer { 
           margin-top: 32px; 
           text-align: center; 
@@ -300,12 +292,11 @@ export default function Login() {
           line-height: 1.6;
         }
 
-        /* Logos responsive para móvil */
+        /* Logos móvil */
         .lp-mobile-logos {
           display: none;
         }
 
-        /* ── Responsive: versión móvil ── */
         @media (max-width: 800px) {
           .lp-root { 
             grid-template-columns: 1fr; 
@@ -354,33 +345,29 @@ export default function Login() {
 
       <div className="lp-root">
 
-        {/* ── Panel izquierdo con logos sin fondo ── */}
+        {/* Panel izquierdo con logos de PostImages */}
         <div className="lp-brand">
           <div className="lp-logos">
             <div className="lp-logo-container">
-              {!logoITSSNPFail ? (
-                <img 
-                  src={logoITSSNP} 
-                  alt="ITSSNP" 
-                  className="lp-logo"
-                  onError={() => setLogoITSSNPFail(true)}
-                />
-              ) : (
-                <span style={{color:'#fff', fontSize:'40px'}}>🏫</span>
-              )}
+              <img 
+                src={ASSETS.logoITSSNP}
+                alt="ITSSNP" 
+                className="lp-logo"
+                onError={(e) => {
+                  e.target.src = ASSETS.logoITSSNP2; // Intenta con el segundo logo
+                }}
+              />
             </div>
             <div className="lp-divider" />
             <div className="lp-logo-container">
-              {!logoTECNMFail ? (
-                <img 
-                  src={logoTECNM} 
-                  alt="TecNM" 
-                  className="lp-logo"
-                  onError={() => setLogoTECNMFail(true)}
-                />
-              ) : (
-                <span style={{color:'#fff', fontSize:'40px'}}>🎓</span>
-              )}
+              <img 
+                src={ASSETS.logoTECNM}
+                alt="TecNM" 
+                className="lp-logo"
+                onError={(e) => {
+                  e.target.src = ASSETS.logoTECNM2; // Intenta con el segundo logo
+                }}
+              />
             </div>
           </div>
 
@@ -397,32 +384,24 @@ export default function Login() {
           </div>
         </div>
 
-        {/* ── Panel derecho con formulario ── */}
+        {/* Panel derecho con formulario */}
         <div className="lp-form-side">
           <div className="lp-card">
 
             {/* Logos para móvil */}
             <div className="lp-mobile-logos">
               <div className="lp-mobile-logo">
-                {!logoITSSNPFail ? (
-                  <img src={logoITSSNP} alt="ITSSNP" onError={() => setLogoITSSNPFail(true)} />
-                ) : (
-                  <span style={{fontSize:'32px'}}>🏫</span>
-                )}
+                <img src={ASSETS.logoITSSNP} alt="ITSSNP" />
               </div>
               <div className="lp-mobile-divider" />
               <div className="lp-mobile-logo">
-                {!logoTECNMFail ? (
-                  <img src={logoTECNM} alt="TecNM" onError={() => setLogoTECNMFail(true)} />
-                ) : (
-                  <span style={{fontSize:'32px'}}>🎓</span>
-                )}
+                <img src={ASSETS.logoTECNM} alt="TecNM" />
               </div>
             </div>
 
             <h2 className="lp-card-title">Iniciar sesión</h2>
             <p className="lp-card-sub">
-              Ingresa tu número de control o usuario administrador para acceder al sistema
+              Ingresa tu número de control o usuario administrador
             </p>
 
             {/* Error */}
@@ -435,21 +414,17 @@ export default function Login() {
 
             <form onSubmit={handleSubmit} noValidate>
 
-              {/* Usuario / No. Control */}
+              {/* Usuario */}
               <div className="lp-field">
                 <label className="lp-label">Usuario / No. de control</label>
                 <div className="lp-input-wrap">
                   <span className="lp-input-icon">
-                    {!iconUserFail ? (
-                      <img src={iconUser} alt="" onError={() => setIconUserFail(true)} />
-                    ) : (
-                      <span style={{fontSize:'16px'}}>👤</span>
-                    )}
+                    <img src={ASSETS.iconUser} alt="" />
                   </span>
                   <input
                     className="lp-input"
                     type="text"
-                    placeholder="Ej: 25100019 o admin"
+                    placeholder="Ej: 22100067 o admin"
                     value={usuario}
                     onChange={e => { setUsuario(e.target.value); setError("") }}
                     autoComplete="username"
@@ -464,11 +439,7 @@ export default function Login() {
                 <label className="lp-label">Contraseña</label>
                 <div className="lp-input-wrap">
                   <span className="lp-input-icon">
-                    {!iconLockFail ? (
-                      <img src={iconLock} alt="" onError={() => setIconLockFail(true)} />
-                    ) : (
-                      <span style={{fontSize:'16px'}}>🔒</span>
-                    )}
+                    <img src={ASSETS.iconLock} alt="" />
                   </span>
                   <input
                     className="lp-input with-padding"
@@ -484,21 +455,11 @@ export default function Login() {
                     className="lp-eye-btn"
                     onClick={() => setVerPassword(v => !v)}
                     tabIndex={-1}
-                    aria-label={verPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
-                    {verPassword ? (
-                      !iconEyeOffFail ? (
-                        <img src={iconEyeOff} alt="ocultar" onError={() => setIconEyeOffFail(true)} />
-                      ) : (
-                        <span style={{fontSize:'16px'}}>🙈</span>
-                      )
-                    ) : (
-                      !iconEyeFail ? (
-                        <img src={iconEye} alt="mostrar" onError={() => setIconEyeFail(true)} />
-                      ) : (
-                        <span style={{fontSize:'16px'}}>👁️</span>
-                      )
-                    )}
+                    <img 
+                      src={verPassword ? ASSETS.iconEyeOff : ASSETS.iconEye} 
+                      alt={verPassword ? "ocultar" : "mostrar"}
+                    />
                   </button>
                 </div>
               </div>
@@ -519,7 +480,7 @@ export default function Login() {
 
             <p className="lp-footer">
               Instituto Tecnológico Superior de la Sierra Norte de Puebla · TecNM<br />
-              ¿Problemas para acceder? Contacta a Control Escolar
+              ¿Problemas? Contacta a Control Escolar
             </p>
           </div>
         </div>

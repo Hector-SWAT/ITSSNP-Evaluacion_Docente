@@ -603,7 +603,7 @@ export default function PanelAlumno() {
           <div className="pa-hero" style={{ "--pct": `${pct}%` }}>
             <div className="pa-hero-content">
               <div className="pa-hero-info">
-                <h1>Evaluación de tutores</h1>
+                <h1>Evaluación de Docentes</h1>
                 <div className="pa-hero-badges">
                   <span className="pa-hero-badge">
                     <img src={ASSETS.iconUser} alt="" style={{width:'14px', height:'14px', filter:'brightness(0) invert(1)'}} />
@@ -662,13 +662,13 @@ export default function PanelAlumno() {
           {/* ── Lista de tutores ── */}
           <div>
             <div className="pa-section-title">
-              <h2>Tus tutores asignados</h2>
+              <h2>Tus Docentes asignados</h2>
               <span className="pa-section-count">{total}</span>
             </div>
 
             {total === 0 ? (
               <div className="pa-empty">
-                <p>No tienes tutores asignados en este periodo.</p>
+                <p>No tienes Docentes asignados en este periodo.</p>
                 <p style={{ fontSize: '13px', marginTop: '8px', color: '#94a3b8' }}>
                   Si crees que esto es un error, contacta a tu coordinador académico.
                 </p>

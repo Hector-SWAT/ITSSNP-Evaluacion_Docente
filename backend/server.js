@@ -111,20 +111,21 @@ const pool = mysql.createPool({
   ssl: { rejectUnauthorized: false },
 })
 
-/* Verificar conexión al arrancar */
+/* Verificar conexión al arrancar - AHORA NO SALE DEL PROCESO */
 ;(async () => {
   try {
     const conn = await pool.getConnection()
     console.log("✅  MySQL conectado →", dbCfg?.database, "@", dbCfg?.host)
     conn.release()
   } catch (err) {
-    console.error("❌  Error MySQL:", err.message)
-    process.exit(1)
+    console.error("⚠️  Advertencia MySQL:", err.message)
+    console.log("🔄  Continuando... Railway reintentará la conexión automáticamente")
+    // NO HACER process.exit(1) - Railway maneja los reintentos
   }
 })()
 
 /* ══════════════════════════════════════════════════════════════
-   HEALTH CHECK
+   HEALTH CHECK — SIMPLIFICADO PARA RAILWAY
 ══════════════════════════════════════════════════════════════ */
 app.get("/", (_req, res) => {
   res.json({ 
@@ -134,7 +135,17 @@ app.get("/", (_req, res) => {
   })
 })
 
-app.get("/health", async (_req, res) => {
+// Health check simple que SIEMPRE responde rápido (para Railway)
+app.get("/health", (req, res) => {
+  res.status(200).json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  })
+})
+
+// Health check detallado (opcional, con verificación de BD)
+app.get("/health/detailed", async (_req, res) => {
   try {
     const [result] = await pool.query('SELECT 1 as healthCheck')
     res.json({ 
@@ -657,20 +668,15 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
 })
 
 /* ══════════════════════════════════════════════════════════════
-   ARRANCAR
+   ARRANCAR — CORREGIDO PARA RAILWAY
 ══════════════════════════════════════════════════════════════ */
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log("===================================")
   console.log(`🚀  SICOT API corriendo`)
-  console.log(`🌐  Puerto: ${PORT}`)
+  console.log(`🌐  Puerto: ${PORT} (0.0.0.0)`)
   console.log(`📡  Entorno: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🗄️  DB: ${dbCfg?.host}/${dbCfg?.database}`)
-  console.log(`✅  CORS permitido para:`)
-  console.log(`    - https://itssnp-evaluacion-docente.vercel.app`)
-  console.log(`    - http://localhost:5173`)
-  console.log(`    - http://localhost:4173`)
-  if (process.env.FRONTEND_URL) {
-    console.log(`    - ${process.env.FRONTEND_URL}`)
-  }
+  console.log(`✅  Health check: /health (para Railway)`)
+  console.log(`📊  Health detallado: /health/detailed`)
   console.log("===================================")
 })

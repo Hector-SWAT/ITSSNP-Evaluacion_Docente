@@ -187,21 +187,68 @@ export default function Dashboard() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState(null)
 
+  /* ── Estados de carga para selects ── */
+  const [cargandoDocentes, setCargandoDocentes] = useState(true)
+  const [cargandoPeriodos, setCargandoPeriodos] = useState(true)
+  const [errorDocentes, setErrorDocentes] = useState(null)
+  const [errorPeriodos, setErrorPeriodos] = useState(null)
+
   /* ── UI ── */
   const [tabAlumnos, setTabAlumnos] = useState("completaron")
   const [vistaGraf,  setVistaGraf]  = useState("barras")
 
+  /* ── Verificar autenticación al cargar ── */
+  useEffect(() => {
+    // Si no hay usuario o no es admin, redirigir al login
+    if (!user || user.tipo !== "admin") {
+      navigate("/login", { replace: true })
+      return
+    }
+  }, [user, navigate])
+
   /* ── Cargar docentes y periodos al montar ── */
   useEffect(() => {
-    Promise.all([getDocentesAPI(), getPeriodosAPI()])
-      .then(([docs, pers]) => {
+    // Solo cargar si hay usuario admin
+    if (!user || user.tipo !== "admin") return
+
+    const cargarDatos = async () => {
+      try {
+        setCargandoDocentes(true)
+        const docs = await getDocentesAPI()
         setDocentes(docs)
+        setErrorDocentes(null)
+      } catch (err) {
+        console.error("Error cargando docentes:", err)
+        setErrorDocentes(err.message)
+        // Si el error es de autenticación, redirigir
+        if (err.message.includes("Token") || err.message.includes("401")) {
+          navigate("/login", { replace: true })
+        }
+      } finally {
+        setCargandoDocentes(false)
+      }
+
+      try {
+        setCargandoPeriodos(true)
+        const pers = await getPeriodosAPI()
         setPeriodos(pers)
+        setErrorPeriodos(null)
+        // Seleccionar periodo activo por defecto
         const activo = pers.find(p => p.activo === 1 || p.activo === true)
         if (activo) setIdPeriodo(String(activo.id))
-      })
-      .catch(err => console.error("Error cargando filtros:", err))
-  }, [])
+      } catch (err) {
+        console.error("Error cargando periodos:", err)
+        setErrorPeriodos(err.message)
+        if (err.message.includes("Token") || err.message.includes("401")) {
+          navigate("/login", { replace: true })
+        }
+      } finally {
+        setCargandoPeriodos(false)
+      }
+    }
+
+    cargarDatos()
+  }, [user, navigate])
 
   /* ── Consultar resultados cuando cambian los selects ── */
   useEffect(() => {
@@ -215,9 +262,14 @@ export default function Dashboard() {
     setResultado(null)
     getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo))
       .then(data => setResultado(data))
-      .catch(err => setError(err.message || "Error al obtener resultados"))
+      .catch(err => {
+        setError(err.message || "Error al obtener resultados")
+        if (err.message.includes("Token") || err.message.includes("401")) {
+          navigate("/login", { replace: true })
+        }
+      })
       .finally(() => setLoading(false))
-  }, [idDocente, idPeriodo])
+  }, [idDocente, idPeriodo, navigate])
 
   const clasifStyle = resultado ? (CLASIF_COLOR[resultado.clasificacion] ?? CLASIF_COLOR.REGULAR) : {}
   const pctCompleto = resultado
@@ -258,6 +310,7 @@ export default function Dashboard() {
         .db-flabel{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
         .db-fsel{height:44px;padding:0 14px;background:#f8faff;border:1.5px solid #e2e8f0;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:#0f172a;cursor:pointer;outline:none;transition:border-color .15s}
         .db-fsel:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+        .db-fsel:disabled{opacity:0.5;cursor:not-allowed}
 
         /* ── Estado vacío ── */
         .db-empty{background:#fff;border:1.5px dashed #c7d2fe;border-radius:18px;padding:56px 24px;text-align:center;animation:_fadeUp .4s ease both}
@@ -345,7 +398,7 @@ export default function Dashboard() {
           </div>
           <div className="db-nav-r">
             <span className="db-nav-badge">Admin</span>
-            <span className="db-nav-user">{user?.nombre}</span>
+            <span className="db-nav-user">{user?.nombre || 'Admin'}</span>
             <button className="db-btn-logout" onClick={logout}>Cerrar sesión</button>
           </div>
         </nav>
@@ -360,14 +413,18 @@ export default function Dashboard() {
                 className="db-fsel"
                 value={idDocente}
                 onChange={e => setIdDocente(e.target.value)}
-                disabled={docentes.length === 0}
+                disabled={cargandoDocentes || errorDocentes !== null}
               >
-                <option value="">
-                  {docentes.length === 0 ? "Cargando docentes…" : "— Selecciona un docente —"}
-                </option>
-                {docentes.map(d => (
-                  <option key={d.id} value={d.id}>{d.nombre}</option>
-                ))}
+                {cargandoDocentes && <option value="">Cargando docentes...</option>}
+                {errorDocentes && <option value="">Error al cargar docentes</option>}
+                {!cargandoDocentes && !errorDocentes && (
+                  <>
+                    <option value="">— Selecciona un docente —</option>
+                    {docentes.map(d => (
+                      <option key={d.id} value={d.id}>{d.nombre}</option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
             <div className="db-fgroup">
@@ -376,16 +433,20 @@ export default function Dashboard() {
                 className="db-fsel"
                 value={idPeriodo}
                 onChange={e => setIdPeriodo(e.target.value)}
-                disabled={periodos.length === 0}
+                disabled={cargandoPeriodos || errorPeriodos !== null}
               >
-                <option value="">
-                  {periodos.length === 0 ? "Cargando periodos…" : "— Selecciona un periodo —"}
-                </option>
-                {periodos.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}{(p.activo === 1 || p.activo === true) ? " ★ Activo" : ""}
-                  </option>
-                ))}
+                {cargandoPeriodos && <option value="">Cargando periodos...</option>}
+                {errorPeriodos && <option value="">Error al cargar periodos</option>}
+                {!cargandoPeriodos && !errorPeriodos && (
+                  <>
+                    <option value="">— Selecciona un periodo —</option>
+                    {periodos.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre}{(p.activo === 1 || p.activo === true) ? " ★ Activo" : ""}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -416,10 +477,13 @@ export default function Dashboard() {
               <button
                 className="db-retry-btn"
                 onClick={() => {
-                  // Re-trigger el useEffect cambiando brevemente y volviendo
-                  const tmp = idDocente
-                  setIdDocente("")
-                  setTimeout(() => setIdDocente(tmp), 50)
+                  if (idDocente && idPeriodo) {
+                    setLoading(true)
+                    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo))
+                      .then(data => setResultado(data))
+                      .catch(err => setError(err.message))
+                      .finally(() => setLoading(false))
+                  }
                 }}
               >
                 🔄 Reintentar

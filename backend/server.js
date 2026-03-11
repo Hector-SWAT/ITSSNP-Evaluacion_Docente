@@ -9,7 +9,7 @@
  *  3. Variables de entorno en Railway:
  *       DATABASE_URL  = mysql://root:cdFLRUidwslSicLWufGKskPbEraFPspX@trolley.proxy.rlwy.net:19348/railway
  *       JWT_SECRET    = sicot_itssnp_2026_secreto
- *       FRONTEND_URL  = https://sicot-app.vercel.app   (poner tu URL de Vercel)
+ *       FRONTEND_URL  = https://itssnp-evaluacion-docente.vercel.app
  *       NODE_ENV      = production
  *
  *  ─── DEV LOCAL ───────────────────────────────────────────────
@@ -27,37 +27,49 @@ const express = require("express")
 const mysql   = require("mysql2/promise")
 const jwt     = require("jsonwebtoken")
 const crypto  = require("crypto")
+const cors    = require("cors")
 
 const app  = express()
 const PORT = process.env.PORT || 3001
 
 /* ══════════════════════════════════════════════════════════════
-   CORS — Manual headers (más confiable que el paquete cors)
-   Permite localhost en dev y tu dominio de Vercel en producción
+   CORS — Configuración mejorada con el paquete cors
 ══════════════════════════════════════════════════════════════ */
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Lista de orígenes permitidos
+    const allowedOrigins = [
+      "http://localhost:5173",
+      "http://localhost:4173",
+      "https://itssnp-evaluacion-docente.vercel.app",
+      process.env.FRONTEND_URL
+    ].filter(Boolean)
+    
+    // Permitir peticiones sin origen (ej: Postman, curl) en desarrollo
+    if (!origin) {
+      if (process.env.NODE_ENV !== 'production') {
+        return callback(null, true)
+      }
+      return callback(null, false)
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.log('🚫 CORS bloqueado para:', origin)
+      callback(new Error('No permitido por CORS'))
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+}
+
+// Aplicar CORS a todas las rutas
+app.use(cors(corsOptions))
+
+// Middleware para logging de peticiones (útil para debugging)
 app.use((req, res, next) => {
-  const origin = req.headers.origin
-
-  const allowed = [
-    "http://localhost:5173",
-    "http://localhost:4173",
-    "https://itssnp-evaluacion-docente.vercel.app",
-    process.env.FRONTEND_URL,
-  ].filter(Boolean)
-
-  if (!origin || allowed.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin",  origin || "*")
-  }
-
-  res.setHeader("Access-Control-Allow-Methods",  "GET, POST, PUT, DELETE, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers",  "Content-Type, Authorization")
-  res.setHeader("Access-Control-Allow-Credentials", "true")
-
-  // Responder inmediatamente el preflight OPTIONS
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204)
-  }
-
+  console.log(`📡 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'sin origen'}`)
   next()
 })
 
@@ -76,7 +88,9 @@ function parseDbUrl(url) {
       password: decodeURIComponent(u.password),
       database: u.pathname.slice(1),
     }
-  } catch { return null }
+  } catch { 
+    return null 
+  }
 }
 
 const dbCfg = process.env.DATABASE_URL
@@ -112,8 +126,31 @@ const pool = mysql.createPool({
 /* ══════════════════════════════════════════════════════════════
    HEALTH CHECK
 ══════════════════════════════════════════════════════════════ */
-app.get("/",       (_req, res) => res.json({ app: "SICOT API", status: "ok" }))
-app.get("/health", (_req, res) => res.json({ status: "ok", ts: new Date() }))
+app.get("/", (_req, res) => {
+  res.json({ 
+    app: "SICOT API", 
+    status: "ok",
+    environment: process.env.NODE_ENV || 'development'
+  })
+})
+
+app.get("/health", async (_req, res) => {
+  try {
+    const [result] = await pool.query('SELECT 1 as healthCheck')
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date(),
+      database: "connected",
+      uptime: process.uptime()
+    })
+  } catch (err) {
+    res.status(500).json({ 
+      status: "error", 
+      database: "disconnected",
+      error: err.message 
+    })
+  }
+})
 
 /* ══════════════════════════════════════════════════════════════
    MIDDLEWARES DE AUTH
@@ -134,7 +171,9 @@ function authMiddleware(req, res, next) {
 }
 
 function soloAdmin(req, res, next) {
-  if (req.user?.tipo !== "admin") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user?.tipo !== "admin") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
   next()
 }
 
@@ -221,7 +260,9 @@ app.post("/api/auth/login", async (req, res) => {
    ALUMNO — GET /api/alumno/perfil
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
 
   try {
     const [[alumno]] = await pool.query(`
@@ -232,7 +273,9 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
       WHERE  a.num_control = ?
     `, [req.user.id])
 
-    if (!alumno) return res.status(404).json({ error: "Alumno no encontrado." })
+    if (!alumno) {
+      return res.status(404).json({ error: "Alumno no encontrado." })
+    }
 
     const [[periodo]] = await pool.query(
       `SELECT id_perio, nombre FROM periodo_escolar WHERE situacion = 1 LIMIT 1`
@@ -254,7 +297,12 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
       ORDER BY d.apellidos
     `, [req.user.id, periodo?.id_perio])
 
-    return res.json({ ...alumno, periodo: periodo?.nombre, tutores })
+    return res.json({ 
+      ...alumno, 
+      periodo: periodo?.nombre, 
+      tutores,
+      totalTutores: tutores.length
+    })
 
   } catch (err) {
     console.error("Error en /api/alumno/perfil:", err)
@@ -266,18 +314,24 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
    ALUMNO — GET /api/alumno/evaluaciones
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
 
   try {
     const [[periodo]] = await pool.query(
       `SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`
     )
 
+    if (!periodo) {
+      return res.json({ evaluaciones: [] })
+    }
+
     const [rows] = await pool.query(`
       SELECT id_doce, estado
       FROM   evaluacion_docente
       WHERE  num_control = ? AND id_perio = ?
-    `, [req.user.id, periodo?.id_perio])
+    `, [req.user.id, periodo.id_perio])
 
     return res.json({
       evaluaciones: rows.map(r => ({
@@ -293,14 +347,17 @@ app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   ENCUESTA — GET /api/encuesta/preguntas?idTutor=X
+   ENCUESTA — GET /api/encuesta/preguntas
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
   try {
     const [[encuesta]] = await pool.query(
       `SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1`
     )
-    if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa." })
+    
+    if (!encuesta) {
+      return res.status(404).json({ error: "No hay encuesta activa." })
+    }
 
     const [preguntas] = await pool.query(`
       SELECT id_pregunta AS id, id_categoria AS idCategoria, texto
@@ -309,7 +366,11 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
       ORDER  BY orden
     `, [encuesta.id_encuesta])
 
-    return res.json({ idEncuesta: encuesta.id_encuesta, preguntas })
+    return res.json({ 
+      idEncuesta: encuesta.id_encuesta, 
+      preguntas,
+      totalPreguntas: preguntas.length
+    })
 
   } catch (err) {
     console.error("Error en /api/encuesta/preguntas:", err)
@@ -321,17 +382,26 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
    EVALUACIÓN — POST /api/evaluacion/iniciar
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
 
   const { idTutor, idGrupo } = req.body
-  if (!idTutor || !idGrupo) return res.status(400).json({ error: "idTutor e idGrupo requeridos." })
+  if (!idTutor || !idGrupo) {
+    return res.status(400).json({ error: "idTutor e idGrupo requeridos." })
+  }
 
   const conn = await pool.getConnection()
   try {
     await conn.beginTransaction()
 
-    const [[periodo]]  = await conn.query(`SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`)
-    const [[encuesta]] = await conn.query(`SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1`)
+    const [[periodo]]  = await conn.query(
+      `SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`
+    )
+    
+    const [[encuesta]] = await conn.query(
+      `SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1`
+    )
 
     if (!periodo || !encuesta) {
       await conn.rollback()
@@ -361,7 +431,11 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
     }
 
     await conn.commit()
-    return res.json({ idEvaluacion, idEncuesta: encuesta.id_encuesta })
+    return res.json({ 
+      idEvaluacion, 
+      idEncuesta: encuesta.id_encuesta,
+      mensaje: "Evaluación iniciada correctamente"
+    })
 
   } catch (err) {
     await conn.rollback()
@@ -376,7 +450,9 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
    EVALUACIÓN — POST /api/evaluacion/responder
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
 
   const { idEvaluacion, respuestas } = req.body
   if (!idEvaluacion || !Array.isArray(respuestas) || !respuestas.length) {
@@ -392,14 +468,26 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
       [idEvaluacion]
     )
 
-    if (!ev) { await conn.rollback(); return res.status(404).json({ error: "Evaluación no encontrada." }) }
-    if (ev.num_control !== req.user.id) { await conn.rollback(); return res.status(403).json({ error: "No es tu evaluación." }) }
-    if (ev.estado === 3) { await conn.rollback(); return res.status(409).json({ error: "Ya fue completada." }) }
+    if (!ev) { 
+      await conn.rollback(); 
+      return res.status(404).json({ error: "Evaluación no encontrada." }) 
+    }
+    
+    if (ev.num_control !== req.user.id) { 
+      await conn.rollback(); 
+      return res.status(403).json({ error: "No es tu evaluación." }) 
+    }
+    
+    if (ev.estado === 3) { 
+      await conn.rollback(); 
+      return res.status(409).json({ error: "Ya fue completada." }) 
+    }
 
     for (const r of respuestas) {
       await conn.query(`
-        INSERT IGNORE INTO respuesta_evaluacion (id_evaluacion, id_pregunta, calificacion)
+        INSERT INTO respuesta_evaluacion (id_evaluacion, id_pregunta, calificacion)
         VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE calificacion = VALUES(calificacion)
       `, [idEvaluacion, r.idPregunta, r.calificacion])
     }
 
@@ -409,9 +497,12 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
     await conn.commit()
 
     if (result.ok === 1) {
-      return res.json({ success: true, mensaje: "Evaluación completada." })
+      return res.json({ 
+        success: true, 
+        mensaje: "Evaluación completada correctamente." 
+      })
     } else {
-      return res.status(400).json({ error: result.msg })
+      return res.status(400).json({ error: result.msg || "Error al completar la evaluación" })
     }
 
   } catch (err) {
@@ -431,7 +522,9 @@ app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) =
     const [rows] = await pool.query(`
       SELECT id_doce AS id,
              CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre
-      FROM   docente WHERE vigente = 1 ORDER BY apellidos
+      FROM   docente 
+      WHERE  vigente = 1 
+      ORDER BY apellidos
     `)
     return res.json({ docentes: rows })
   } catch (err) {
@@ -447,7 +540,8 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
   try {
     const [rows] = await pool.query(`
       SELECT id_perio AS id, nombre, situacion AS activo
-      FROM   periodo_escolar ORDER BY id_perio DESC
+      FROM   periodo_escolar 
+      ORDER BY id_perio DESC
     `)
     return res.json({ periodos: rows })
   } catch (err) {
@@ -461,6 +555,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.query
+  
   if (!idDocente || !idPeriodo) {
     return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
   }
@@ -468,22 +563,29 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
   try {
     const [[docente]] = await pool.query(`
       SELECT id_doce, CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre
-      FROM   docente WHERE id_doce = ?
+      FROM   docente 
+      WHERE  id_doce = ?
     `, [idDocente])
 
-    if (!docente) return res.status(404).json({ error: "Docente no encontrado." })
+    if (!docente) {
+      return res.status(404).json({ error: "Docente no encontrado." })
+    }
 
     const [[periodo]] = await pool.query(
-      `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, [idPeriodo]
+      `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, 
+      [idPeriodo]
     )
 
     const [promediosCat] = await pool.query(`
-      SELECT p.id_categoria AS idCategoria, ROUND(AVG(re.calificacion), 2) AS promedio
+      SELECT p.id_categoria AS idCategoria, 
+             ROUND(AVG(re.calificacion), 2) AS promedio,
+             COUNT(DISTINCT re.id_evaluacion) AS totalEvaluaciones
       FROM   respuesta_evaluacion re
       JOIN   pregunta p             ON p.id_pregunta   = re.id_pregunta
       JOIN   evaluacion_docente ed  ON ed.id_evaluacion = re.id_evaluacion
       WHERE  ed.id_doce = ? AND ed.id_perio = ? AND ed.estado = 3
-      GROUP  BY p.id_categoria ORDER BY p.id_categoria
+      GROUP  BY p.id_categoria 
+      ORDER BY p.id_categoria
     `, [idDocente, idPeriodo])
 
     const [[counts]] = await pool.query(`
@@ -498,7 +600,9 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
     `, [idDocente, idPeriodo, idDocente, idPeriodo])
 
     const [completaron] = await pool.query(`
-      SELECT DISTINCT a.num_control AS numControl, a.nombre_completo AS nombre, c.nombre_corto AS carrera
+      SELECT DISTINCT a.num_control AS numControl, 
+                      a.nombre_completo AS nombre, 
+                      c.nombre_corto AS carrera
       FROM   evaluacion_docente ed
       JOIN   alumno a  ON a.num_control = ed.num_control
       JOIN   carrera c ON c.id_carre = a.id_carre
@@ -507,7 +611,9 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
     `, [idDocente, idPeriodo])
 
     const [faltantes] = await pool.query(`
-      SELECT DISTINCT a.num_control AS numControl, a.nombre_completo AS nombre, c.nombre_corto AS carrera
+      SELECT DISTINCT a.num_control AS numControl, 
+                      a.nombre_completo AS nombre, 
+                      c.nombre_corto AS carrera
       FROM   inscripcion i
       JOIN   grupo g   ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
       JOIN   alumno a  ON a.num_control = i.num_control
@@ -522,7 +628,8 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
 
     const vals = promediosCat.map(p => Number(p.promedio))
     const promedioGeneral = vals.length
-      ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : 0
+      ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) 
+      : 0
 
     const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
                         : promedioGeneral >= 3.5 ? "MUY BUENO"
@@ -531,11 +638,16 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
                         : "DEFICIENTE"
 
     return res.json({
-      docente, periodo,
-      totalAlumnos: counts.total_alumnos ?? 0,
-      completaron, faltantes,
+      docente, 
+      periodo,
+      totalAlumnos: counts?.total_alumnos ?? 0,
+      totalCompletaron: completaron.length,
+      totalFaltantes: faltantes.length,
+      completaron, 
+      faltantes,
       promediosCat: Object.fromEntries(promediosCat.map(p => [p.idCategoria, Number(p.promedio)])),
-      promedioGeneral, clasificacion,
+      promedioGeneral, 
+      clasificacion,
     })
 
   } catch (err) {
@@ -548,6 +660,17 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
    ARRANCAR
 ══════════════════════════════════════════════════════════════ */
 app.listen(PORT, () => {
-  console.log(`🚀  SICOT API → puerto ${PORT}`)
-  console.log(`    CORS permitido para: https://itssnp-evaluacion-docente.vercel.app`)
+  console.log("===================================")
+  console.log(`🚀  SICOT API corriendo`)
+  console.log(`🌐  Puerto: ${PORT}`)
+  console.log(`📡  Entorno: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`🗄️  DB: ${dbCfg?.host}/${dbCfg?.database}`)
+  console.log(`✅  CORS permitido para:`)
+  console.log(`    - https://itssnp-evaluacion-docente.vercel.app`)
+  console.log(`    - http://localhost:5173`)
+  console.log(`    - http://localhost:4173`)
+  if (process.env.FRONTEND_URL) {
+    console.log(`    - ${process.env.FRONTEND_URL}`)
+  }
+  console.log("===================================")
 })

@@ -1,6 +1,6 @@
 /* ================================================================
    evaluacionData.js  →  src/services/evaluacionData.js
-   VERSIÓN REAL CONECTADA A BASE DE DATOS
+   VERSIÓN REAL CONECTADA A BASE DE DATOS - CORREGIDA
    ================================================================ */
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://itssnp-evaluaciondocente-production.up.railway.app';
@@ -156,7 +156,8 @@ export async function getEvaluacionesAlumnoAPI(numControl) {
     return data;
   } catch (error) {
     console.error('❌ Error en getEvaluacionesAlumnoAPI:', error);
-    return { evaluaciones: [], tutoresPendientes: [], totalCompletadas: 0, totalPendientes: 0 };
+    // En lugar de return vacío, lanzamos error para manejarlo en el componente
+    throw error;
   }
 }
 
@@ -240,7 +241,7 @@ export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
 }
 
 // ============================================================
-//  FUNCIONES PARA ADMIN / DASHBOARD
+//  FUNCIONES PARA ADMIN / DASHBOARD (CORREGIDAS)
 // ============================================================
 
 /**
@@ -249,20 +250,30 @@ export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
  */
 export async function getDocentesAPI() {
   try {
+    const token = getToken();
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
+
     const response = await fetch(`${API_URL}/api/dashboard/docentes`, {
       headers: getHeaders()
     });
     
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.');
+    }
+    
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.error || 'Error al obtener docentes');
     }
     
     const data = await response.json();
+    console.log('✅ Docentes cargados:', data);
     return data.docentes || [];
   } catch (error) {
     console.error('❌ Error en getDocentesAPI:', error);
-    return [];
+    throw error; // Lanzamos el error para manejarlo en el componente
   }
 }
 
@@ -272,20 +283,30 @@ export async function getDocentesAPI() {
  */
 export async function getPeriodosAPI() {
   try {
+    const token = getToken();
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
+
     const response = await fetch(`${API_URL}/api/dashboard/periodos`, {
       headers: getHeaders()
     });
     
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.');
+    }
+    
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.error || 'Error al obtener periodos');
     }
     
     const data = await response.json();
+    console.log('✅ Periodos cargados:', data);
     return data.periodos || [];
   } catch (error) {
     console.error('❌ Error en getPeriodosAPI:', error);
-    return [];
+    throw error; // Lanzamos el error para manejarlo en el componente
   }
 }
 
@@ -295,17 +316,27 @@ export async function getPeriodosAPI() {
  */
 export async function getResultadosDocenteAPI(idDocente, idPeriodo) {
   try {
+    const token = getToken();
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
+
     const response = await fetch(
       `${API_URL}/api/dashboard/resultados?idDocente=${idDocente}&idPeriodo=${idPeriodo}`,
       { headers: getHeaders() }
     );
     
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.');
+    }
+    
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.error || 'Error al obtener resultados');
     }
     
     const data = await response.json();
+    console.log('✅ Resultados cargados:', data);
     return data;
   } catch (error) {
     console.error('❌ Error en getResultadosDocenteAPI:', error);
@@ -314,12 +345,11 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo) {
 }
 
 // ============================================================
-//  FUNCIONES DE UTILIDAD (COMPATIBILIDAD CON CÓDIGO EXISTENTE)
+//  FUNCIONES DE UTILIDAD
 // ============================================================
 
 /**
  * Verificar si un tutor ya fue evaluado por el alumno
- * Usa los datos de la API en lugar de sessionStorage
  */
 export async function yaEvaluadoAPI(numControl, idTutor) {
   try {
@@ -345,22 +375,20 @@ export async function getPeriodoActivoAPI() {
 }
 
 // ============================================================
-//  VERSIÓN MOCK (para desarrollo sin backend)
-//  Comenta las funciones de arriba y descomenta estas para pruebas locales
+//  MOCKS PARA DESARROLLO LOCAL (comentados)
 // ============================================================
 
 /*
-// Mocks para desarrollo local
-export const PERIODOS = [
+export const PERIODOS_MOCK = [
   { id: 20251, nombre: "Enero–Junio 2025", activo: false },
   { id: 20252, nombre: "Agosto–Diciembre 2025", activo: false },
   { id: 20261, nombre: "Enero–Junio 2026", activo: true },
 ];
 
-export const DOCENTES = [
+export const DOCENTES_MOCK = [
   { id: 101, nombre: "Dr. Carlos Méndez Ríos", grado: "Dr.", departamento: "ISC" },
   { id: 102, nombre: "M.C. Laura Pérez Sánchez", grado: "M.C.", departamento: "ISC" },
-  { id: 103, nombre: "M.D.E. LEGUIZAMO HERNANDEZ MIRIAM", grado: "M.D.E.", departamento: "INF" },
+  { id: 103, nombre: "M.D.E. Miriam Leguizamo Hernández", grado: "M.D.E.", departamento: "INF" },
 ];
 
 export function getPerfilAlumnoMock(numControl) {
@@ -373,7 +401,7 @@ export function getPerfilAlumnoMock(numControl) {
     tutores: [
       {
         id: 103,
-        nombre: "M.D.E. LEGUIZAMO HERNANDEZ MIRIAM",
+        nombre: "M.D.E. Miriam Leguizamo Hernández",
         materia: "Tutoría Grupal",
         grupo: "IN8A",
         id_grupo: 1
@@ -390,10 +418,31 @@ export function getEvaluacionesAlumnoMock(numControl) {
     totalPendientes: 1
   };
 }
+
+export function getResultadosDocenteMock(idDocente, idPeriodo) {
+  return {
+    docente: { id: idDocente, nombre: "Dr. Carlos Méndez Ríos" },
+    periodo: { id: idPeriodo, nombre: "Enero–Junio 2026" },
+    totalAlumnos: 45,
+    completaron: [
+      { numControl: 12345678, nombre: "Juan Pérez", carrera: "ISC" },
+      { numControl: 12345679, nombre: "María García", carrera: "ISC" }
+    ],
+    faltantes: [
+      { numControl: 12345680, nombre: "Luis Sánchez", carrera: "ISC" }
+    ],
+    promediosCat: { 1: 4.5, 2: 4.2, 3: 4.0, 4: 4.8, 5: 4.3, 6: 4.1, 7: 3.9, 8: 4.4, 9: 4.6 },
+    promedioGeneral: 4.3,
+    clasificacion: "MUY BUENO"
+  };
+}
 */
 
-// Por defecto, exportamos las funciones reales
-// Si quieres usar mocks, cambia los nombres en los imports de tus componentes
+// ============================================================
+//  EXPORTS
+// ============================================================
+
+// Exportar funciones reales (descomentar para usar API)
 export const getPerfilAlumno = getPerfilAlumnoAPI;
 export const getEvaluacionesAlumno = getEvaluacionesAlumnoAPI;
 export const getPreguntas = getPreguntasAPI;
@@ -404,3 +453,15 @@ export const getPeriodos = getPeriodosAPI;
 export const getResultadosDocente = getResultadosDocenteAPI;
 export const yaEvaluado = yaEvaluadoAPI;
 export const getPeriodoActivo = getPeriodoActivoAPI;
+
+// Para usar mocks en desarrollo, comenta las líneas de arriba
+// y descomenta estas:
+/*
+export const getPerfilAlumno = getPerfilAlumnoMock;
+export const getEvaluacionesAlumno = getEvaluacionesAlumnoMock;
+export const getDocentes = () => Promise.resolve(DOCENTES_MOCK);
+export const getPeriodos = () => Promise.resolve(PERIODOS_MOCK);
+export const getResultadosDocente = getResultadosDocenteMock;
+export const yaEvaluado = () => Promise.resolve(false);
+export const getPeriodoActivo = () => Promise.resolve(PERIODOS_MOCK[2]);
+*/

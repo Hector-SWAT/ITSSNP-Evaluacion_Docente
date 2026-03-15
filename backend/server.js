@@ -1,31 +1,9 @@
 /**
  * ================================================================
- *  SICOT — Backend API  (Railway-ready)
+ *  SICOT — Backend API  (Railway-ready) — VERSIÓN COMPLETA
  *  Node.js + Express + MySQL2
- *
- *  ─── CONEXIÓN A MYSQL EN RAILWAY ─────────────────────────────
- *  Usando las mismas credenciales que DBeaver:
- *  Host: trolley.proxy.rlwy.net
- *  Port: 19348
- *  User: root
- *  Password: cdFLRUidwslSicLWufGKskPbEraFPspX
- *  Database: railway
- *
- *  ─── DEPLOY EN RAILWAY ───────────────────────────────────────
- *  1. Sube la carpeta /backend a GitHub
- *  2. Railway → New Project → Deploy from GitHub repo
- *  3. Variables de entorno en Railway:
- *       NODE_ENV=production
- *       JWT_SECRET=sicot_itssnp_2026_secreto
- *       FRONTEND_URL=https://itssnp-evaluacion-docente.vercel.app
- *
- *  ─── DEV LOCAL ───────────────────────────────────────────────
- *  Crea el archivo .env en la raíz del backend:
- *       DATABASE_URL=mysql://root:cdFLRUidwslSicLWufGKskPbEraFPspX@trolley.proxy.rlwy.net:19348/railway
- *       JWT_SECRET=sicot_itssnp_2026_secreto
- *       PORT=3001
- *
- *  npm install && node server.js
+ *  
+ *  ✅ INCLUYE ENDPOINT DE COMENTARIOS
  * ================================================================
  */
 
@@ -44,7 +22,6 @@ const PORT = process.env.PORT || 3001
 ══════════════════════════════════════════════════════════════ */
 const corsOptions = {
   origin: function (origin, callback) {
-    // Lista de orígenes permitidos
     const allowedOrigins = [
       "http://localhost:5173",
       "http://localhost:4173",
@@ -52,7 +29,6 @@ const corsOptions = {
       process.env.FRONTEND_URL
     ].filter(Boolean)
     
-    // Permitir peticiones sin origen (ej: Postman, curl) solo en desarrollo
     if (!origin) {
       if (process.env.NODE_ENV !== 'production') {
         return callback(null, true)
@@ -71,10 +47,8 @@ const corsOptions = {
   optionsSuccessStatus: 200
 }
 
-// Aplicar CORS a todas las rutas
 app.use(cors(corsOptions))
 
-// Middleware para logging de peticiones
 app.use((req, res, next) => {
   console.log(`📡 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'sin origen'}`)
   next()
@@ -83,12 +57,11 @@ app.use((req, res, next) => {
 app.use(express.json())
 
 /* ══════════════════════════════════════════════════════════════
-   MYSQL — CONEXIÓN CORREGIDA (igual que DBeaver)
+   MYSQL — CONEXIÓN CORREGIDA
 ══════════════════════════════════════════════════════════════ */
 function getDbConfig() {
   console.log("🔍 Configurando conexión a MySQL...")
   
-  // Para producción en Railway - MISMAS CREDENCIALES QUE DBEAVER
   if (process.env.NODE_ENV === 'production') {
     console.log("✅ MODO PRODUCCIÓN: Usando proxy público (trolley.proxy.rlwy.net:19348)")
     return {
@@ -100,7 +73,6 @@ function getDbConfig() {
     }
   }
   
-  // Para desarrollo local - Usar DATABASE_URL del .env
   if (process.env.DATABASE_URL) {
     try {
       const u = new URL(process.env.DATABASE_URL)
@@ -117,7 +89,6 @@ function getDbConfig() {
     }
   }
   
-  // Fallback a localhost (para pruebas locales sin .env)
   console.log("⚠️ Usando configuración por defecto (localhost)")
   return {
     host: "localhost",
@@ -138,7 +109,6 @@ console.log("📊 Configuración MySQL:", {
   hasPassword: !!dbCfg.password
 })
 
-// Crear pool de conexiones
 const pool = mysql.createPool({
   host: dbCfg.host,
   port: dbCfg.port,
@@ -150,11 +120,10 @@ const pool = mysql.createPool({
   connectTimeout: 10000,
   charset: "utf8mb4",
   ssl: {
-    rejectUnauthorized: false // Importante para conexiones externas
+    rejectUnauthorized: false
   }
 })
 
-// Verificar conexión con reintentos
 ;(async () => {
   let retries = 5
   while (retries > 0) {
@@ -195,7 +164,6 @@ app.get("/", (_req, res) => {
   })
 })
 
-// Health check simple para Railway (siempre responde)
 app.get("/health", (req, res) => {
   res.status(200).json({ 
     status: "healthy", 
@@ -204,7 +172,6 @@ app.get("/health", (req, res) => {
   })
 })
 
-// Health check detallado con verificación de BD
 app.get("/health/detailed", async (_req, res) => {
   try {
     const [result] = await pool.query('SELECT 1 as healthCheck')
@@ -227,7 +194,6 @@ app.get("/health/detailed", async (_req, res) => {
   }
 })
 
-// Endpoint de prueba de BD (como en DBeaver)
 app.get("/api/db-test", async (req, res) => {
   try {
     const [result] = await pool.query('SELECT NOW() as time, DATABASE() as db, USER() as user')
@@ -258,9 +224,9 @@ app.get("/api/db-test", async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   MIDDLEWARES DE AUTH (CORREGIDOS CON LOGGING)
+   MIDDLEWARES DE AUTH
 ══════════════════════════════════════════════════════════════ */
-const JWT_SECRET = process.env.JWT_SECRET || "sicot_itssnp_2026_secreto" // ¡DEBE COINCIDIR!
+const JWT_SECRET = process.env.JWT_SECRET || "sicot_itssnp_2026_secreto"
 
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization
@@ -375,7 +341,7 @@ app.post("/api/auth/login", async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   ALUMNO — GET /api/alumno/perfil (CORREGIDO)
+   ALUMNO — GET /api/alumno/perfil
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
   if (req.user.tipo !== "alumno") {
@@ -609,19 +575,19 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
       `, [idEvaluacion, r.idPregunta, r.calificacion])
     }
 
-    await conn.query(`CALL sp_CompletarEvaluacion(?, @ok, @msg)`, [idEvaluacion])
-    const [[result]] = await conn.query(`SELECT @ok AS ok, @msg AS msg`)
+    // Marcar evaluación como completada
+    await conn.query(`
+      UPDATE evaluacion_docente
+      SET estado = 3, fecha_fin = NOW()
+      WHERE id_evaluacion = ?
+    `, [idEvaluacion])
 
     await conn.commit()
 
-    if (result.ok === 1) {
-      return res.json({ 
-        success: true, 
-        mensaje: "Evaluación completada correctamente." 
-      })
-    } else {
-      return res.status(400).json({ error: result.msg || "Error al completar la evaluación" })
-    }
+    return res.json({ 
+      success: true, 
+      mensaje: "Evaluación completada correctamente." 
+    })
 
   } catch (err) {
     await conn.rollback()
@@ -632,42 +598,41 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
   }
 })
 
-
-/**
- * EVALUACIÓN — POST /api/evaluacion/comentario
- * Guarda el comentario del alumno sobre el docente evaluado
- */
+/* ══════════════════════════════════════════════════════════════
+   EVALUACIÓN — POST /api/evaluacion/comentario ✅ NUEVO
+   Guarda el comentario del alumno sobre el docente evaluado
+══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
   if (req.user.tipo !== "alumno") {
     return res.status(403).json({ error: "Acceso denegado" })
   }
- 
+
   const { idEvaluacion, numControl, idDocente, comentario } = req.body
- 
+
   // Validaciones básicas
   if (!idEvaluacion || !numControl || !idDocente) {
     return res.status(400).json({ 
       error: "idEvaluacion, numControl e idDocente son requeridos." 
     })
   }
- 
-  // El comentario es OPCIONAL, pero si se envía validamos
+
+  // El comentario es OPCIONAL
   if (comentario && comentario.trim().length === 0) {
     return res.status(400).json({ 
       error: "El comentario no puede estar vacío." 
     })
   }
- 
+
   if (comentario && comentario.length > 1000) {
     return res.status(400).json({ 
       error: "El comentario no puede exceder 1000 caracteres." 
     })
   }
- 
+
   const conn = await pool.getConnection()
   try {
     await conn.beginTransaction()
- 
+
     // Verificar que la evaluación existe y pertenece al usuario
     const [[ev]] = await conn.query(
       `SELECT id_evaluacion, num_control, estado 
@@ -675,21 +640,20 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
        WHERE id_evaluacion = ? LIMIT 1`,
       [idEvaluacion]
     )
- 
+
     if (!ev) {
       await conn.rollback()
       return res.status(404).json({ error: "Evaluación no encontrada." })
     }
- 
+
     if (ev.num_control !== req.user.id) {
       await conn.rollback()
       return res.status(403).json({ error: "No es tu evaluación." })
     }
- 
+
     // Si hay comentario, guardarlo
     if (comentario && comentario.trim().length > 0) {
-      // Insertar o actualizar comentario
-      const [ins] = await conn.query(`
+      await conn.query(`
         INSERT INTO comentario_evaluacion
           (id_evaluacion, num_control, id_doce, comentario, visible)
         VALUES (?, ?, ?, ?, 1)
@@ -697,20 +661,20 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
           comentario = VALUES(comentario),
           fecha_creacion = CURRENT_TIMESTAMP
       `, [idEvaluacion, numControl, idDocente, comentario.trim()])
- 
+
       console.log(`✅ Comentario guardado para evaluación ${idEvaluacion}`)
     } else {
-      console.log(`⚠️ Comentario vacío/opcional para evaluación ${idEvaluacion}`)
+      console.log(`⚠️ Comentario opcional/vacío para evaluación ${idEvaluacion}`)
     }
- 
+
     await conn.commit()
- 
+
     return res.json({
       success: true,
       mensaje: "Comentario guardado correctamente.",
       idEvaluacion
     })
- 
+
   } catch (err) {
     await conn.rollback()
     console.error("❌ Error en POST /api/evaluacion/comentario:", err)
@@ -759,7 +723,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 })
 
 /* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/resultados (CORREGIDO - SIN ERROR DE ORDER BY)
+   DASHBOARD — GET /api/dashboard/resultados
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.query
@@ -772,7 +736,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
   }
 
   try {
-    // Verificar que los parámetros son números válidos
     const docenteId = parseInt(idDocente)
     const periodoId = parseInt(idPeriodo)
     
@@ -780,7 +743,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       return res.status(400).json({ error: "IDs inválidos" })
     }
 
-    // 1. Obtener datos del docente
     const [[docente]] = await pool.query(`
       SELECT id_doce, CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre
       FROM   docente 
@@ -791,13 +753,11 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       return res.status(404).json({ error: "Docente no encontrado." })
     }
 
-    // 2. Obtener datos del periodo
     const [[periodo]] = await pool.query(
       `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, 
       [periodoId]
     )
 
-    // 3. Obtener promedios por categoría
     const [promediosCat] = await pool.query(`
       SELECT 
         c.id_categoria,
@@ -813,7 +773,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       ORDER BY c.id_categoria
     `, [docenteId, periodoId])
 
-    // 4. Obtener total de alumnos y completados
     const [[counts]] = await pool.query(`
       SELECT
         COUNT(DISTINCT i.num_control) AS total_alumnos,
@@ -825,7 +784,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       WHERE i.activa = 1
     `, [docenteId, periodoId, docenteId, periodoId])
 
-    // 5. Obtener alumnos que completaron (SIN DISTINCT EN SELECT Y ORDER BY)
     const [completaron] = await pool.query(`
       SELECT 
         a.num_control AS numControl, 
@@ -838,7 +796,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       ORDER BY a.a_paterno, a.a_materno
     `, [docenteId, periodoId])
 
-    // 6. Obtener alumnos pendientes
     const [faltantes] = await pool.query(`
       SELECT 
         a.num_control AS numControl, 
@@ -859,7 +816,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       ORDER BY a.a_paterno, a.a_materno
     `, [docenteId, periodoId, docenteId, periodoId])
 
-    // 7. Calcular promedio general
     const promediosMap = {}
     promediosCat.forEach(p => {
       promediosMap[p.id_categoria] = Number(p.promedio)
@@ -870,7 +826,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       ? +(valoresPromedio.reduce((a, b) => a + b, 0) / valoresPromedio.length).toFixed(2) 
       : 0
 
-    // 8. Determinar clasificación
     const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
                         : promedioGeneral >= 3.5 ? "MUY BUENO"
                         : promedioGeneral >= 2.5 ? "BUENO"
@@ -878,7 +833,6 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
                         : promedioGeneral > 0 ? "DEFICIENTE"
                         : "SIN DATOS"
 
-    // 9. Respuesta exitosa
     return res.json({
       docente, 
       periodo,
@@ -917,5 +871,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`   📊 Health check: /health`)
   console.log(`   🔧 DB Test: /api/db-test`)
   console.log(`   🔐 Login: /api/auth/login`)
+  console.log(`   📝 Comentarios: POST /api/evaluacion/comentario ✨ NUEVO`)
   console.log("=======================================")
 })

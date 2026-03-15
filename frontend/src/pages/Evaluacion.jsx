@@ -1,20 +1,22 @@
 /**
- * Evaluacion.jsx — VERSIÓN CORREGIDA PARA API REAL
+ * Evaluacion.jsx — VERSIÓN CON COMENTARIOS
  * 
  * Cambios realizados:
- * 1. ✅ Eliminada dependencia de getPreguntasOrdenadas (mock)
- * 2. ✅ Ahora usa getPreguntasAPI desde evaluacionData
- * 3. ✅ Usa iniciarEvaluacionAPI y guardarRespuestasAPI
- * 4. ✅ Mantiene toda la lógica de UI y experiencia de usuario
+ * 1. ✅ Nuevo estado "comentario" en la máquina de estados
+ * 2. ✅ Muestra formulario de comentarios después de responder todas las preguntas
+ * 3. ✅ Integra sp_guardar_comentario para guardar el feedback
+ * 4. ✅ Mantiene toda la lógica de UI y experiencia anterior
  */
 
 import { useState, useEffect, useRef } from "react"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
+import Comentario from "./Comentario"
 import {
   getPreguntasAPI,
   iniciarEvaluacionAPI,
   guardarRespuestasAPI,
+  guardarComentarioAPI,
   CATEGORIAS,
   RUBRICA,
 } from "../services/evaluacionData"
@@ -76,18 +78,21 @@ export default function Evaluacion() {
      `fase` es la máquina de estados:
        "libre"       → esperando que el alumno seleccione
        "transitando" → respuesta guardada, esperando los 700ms antes de avanzar
-       "enviando"    → última pregunta respondida, enviando al servidor
+       "comentario"  → todas las preguntas respondidas, mostrando formulario
+       "enviando"    → enviando comentario y cerrando evaluación
   ── */
-  const [pagina,        setPagina]        = useState(0)
-  const [respuestas,    setRespuestas]    = useState({})   // { [idPregunta]: valor }
-  const [fase,          setFase]          = useState("libre")
-  const [mostrarRubrica,setMostrarRubrica]= useState(false)
-  const [animKey,       setAnimKey]       = useState(0)
-  const [toastVisible,  setToastVisible]  = useState(false)
+  const [pagina,           setPagina]           = useState(0)
+  const [respuestas,       setRespuestas]       = useState({})
+  const [fase,             setFase]             = useState("libre")
+  const [mostrarRubrica,   setMostrarRubrica]   = useState(false)
+  const [animKey,          setAnimKey]          = useState(0)
+  const [toastVisible,     setToastVisible]     = useState(false)
+  const [cargandoComentario, setCargandoComentario] = useState(false)
+  const [errorComentario,  setErrorComentario]  = useState(null)
 
   /* Refs que no provocan re-renders */
-  const paginaRef      = useRef(0)   // siempre sincronizado con `pagina`
-  const respuestasRef  = useRef({})  // siempre sincronizado con `respuestas`
+  const paginaRef      = useRef(0)
+  const respuestasRef  = useRef({})
   const timerRef       = useRef(null)
   const toastRef       = useRef(null)
 
@@ -127,22 +132,29 @@ export default function Evaluacion() {
   }, []) // eslint-disable-line
 
   /* ─────────────────────────────────────────────────────────────
-     MÁQUINA DE ESTADOS — reacciona cuando `fase` cambia
+     MÁQUINA DE ESTADOS
      "transitando" → espera 700ms → avanza a siguiente pregunta
+     "comentario"  → muestra formulario de comentarios
      "enviando"    → espera 1100ms → llama a la API y navega
   ───────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (fase === "transitando") {
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
-        /* Leer el índice ACTUAL desde el ref — nunca un closure obsoleto */
         const siguiente = paginaRef.current + 1
-        paginaRef.current = siguiente
-        setPagina(siguiente)
-        setAnimKey(k => k + 1)
-        setMostrarRubrica(false)
-        setFase("libre")
-        window.scrollTo({ top: 0, behavior: "smooth" })
+        
+        // Si es la última pregunta, ir a comentarios
+        if (siguiente >= preguntas.length) {
+          setFase("comentario")
+        } else {
+          // Si no, avanzar a la siguiente
+          paginaRef.current = siguiente
+          setPagina(siguiente)
+          setAnimKey(k => k + 1)
+          setMostrarRubrica(false)
+          setFase("libre")
+          window.scrollTo({ top: 0, behavior: "smooth" })
+        }
       }, 700)
     }
 
@@ -151,12 +163,14 @@ export default function Evaluacion() {
       timerRef.current = setTimeout(async () => {
         try {
           // Preparar respuestas para la API
-          const respuestasArray = Object.entries(respuestasRef.current).map(([idPregunta, calificacion]) => ({
-            idPregunta: Number(idPregunta),
-            calificacion,
-          }))
+          const respuestasArray = Object.entries(respuestasRef.current).map(
+            ([idPregunta, calificacion]) => ({
+              idPregunta: Number(idPregunta),
+              calificacion,
+            })
+          )
 
-          // Enviar a la API
+          // Enviar respuestas a la API
           const resultado = await guardarRespuestasAPI(idEvaluacion, respuestasArray)
           
           if (resultado.success) {
@@ -166,11 +180,11 @@ export default function Evaluacion() {
             })
           } else {
             console.error("Error al guardar:", resultado.error)
-            setFase("libre") // Volver a estado libre si hay error
+            setFase("comentario")
           }
         } catch (error) {
           console.error("Error en envío:", error)
-          setFase("libre")
+          setFase("comentario")
         }
       }, 1100)
     }
@@ -194,25 +208,66 @@ export default function Evaluacion() {
     toastRef.current = setTimeout(() => setToastVisible(false), 2500)
   }
 
-  /* ── Seleccionar opción ────────────────────────────────────
-     Solo actúa si la fase es "libre" (no estamos en medio de
-     una transición ni enviando). Esto elimina todos los
-     problemas de doble-click y closures obsoletos.
-  ── */
+  /* ── Seleccionar opción ──────────────────────────────────── */
   const seleccionar = (valor) => {
     if (!estaLibre) {
-      /* Si ya hay respuesta registrada, avisar */
       if (respActual !== undefined) mostrarToast()
       return
     }
 
-    /* Guardar respuesta — actualizar ref inmediatamente */
     const nuevas = { ...respuestasRef.current, [pregActual.id]: valor }
     respuestasRef.current = nuevas
     setRespuestas(nuevas)
 
-    /* Cambiar fase — el useEffect de arriba se encarga del resto */
-    setFase(esUltima ? "enviando" : "transitando")
+    setFase(esUltima ? "transitando" : "transitando")
+  }
+
+  /* ── Manejar envío de comentario ──────────────────────────── */
+  const handleEnviarComentario = async (comentarioTexto) => {
+    setCargandoComentario(true)
+    setErrorComentario(null)
+
+    try {
+      // Si hay comentario, guardarlo
+      if (comentarioTexto && comentarioTexto.trim().length > 0) {
+        const resultado = await guardarComentarioAPI(
+          idEvaluacion,
+          numControl,
+          tutor.id,
+          comentarioTexto
+        )
+
+        if (!resultado.success) {
+          setErrorComentario(resultado.error || "Error al guardar el comentario")
+          setCargandoComentario(false)
+          return
+        }
+      }
+
+      // Enviar respuestas
+      const respuestasArray = Object.entries(respuestasRef.current).map(
+        ([idPregunta, calificacion]) => ({
+          idPregunta: Number(idPregunta),
+          calificacion,
+        })
+      )
+
+      const resultado = await guardarRespuestasAPI(idEvaluacion, respuestasArray)
+
+      if (resultado.success) {
+        navigate("/gracias", {
+          replace: true,
+          state: { tutor, totalPreguntas: preguntas.length }
+        })
+      } else {
+        setErrorComentario(resultado.error || "Error al guardar la evaluación")
+        setCargandoComentario(false)
+      }
+    } catch (error) {
+      console.error("Error:", error)
+      setErrorComentario(error.message || "Error inesperado")
+      setCargandoComentario(false)
+    }
   }
 
   /* ── Loading inicial ── */
@@ -272,13 +327,130 @@ export default function Evaluacion() {
     )
   }
 
+  /* ── Mostrar formulario de comentarios ── */
+  if (fase === "comentario" || fase === "enviando") {
+    return (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap"
+          rel="stylesheet"
+        />
+
+        <style>{`
+          *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+          html, body, #root { height: 100%; }
+
+          .com-page {
+            font-family: 'DM Sans', sans-serif;
+            min-height: 100dvh;
+            background: #eef2ff;
+            display: flex;
+            flex-direction: column;
+          }
+
+          .com-nav {
+            background: linear-gradient(135deg,#0d2660 0%,#1648b8 55%,#0b7ec9 100%);
+            height: 60px;
+            padding: 0 clamp(16px,4vw,40px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 14px rgba(0,0,0,.26);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+          }
+
+          .com-back {
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.22);
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-family: 'DM Sans',sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: background .15s;
+          }
+
+          .com-back:hover {
+            background: rgba(255,255,255,.24);
+          }
+
+          .com-nav-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: rgba(255,255,255,.85);
+            flex: 1;
+            text-align: center;
+            padding: 0 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .com-body {
+            flex: 1;
+            padding: clamp(14px,3vw,40px) clamp(14px,4vw,24px) 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 13px;
+          }
+
+          .com-wrap {
+            width: 100%;
+            max-width: 680px;
+            display: flex;
+            flex-direction: column;
+            gap: 13px;
+          }
+        `}</style>
+
+        <div className="com-page">
+          {/* Navbar */}
+          <nav className="com-nav">
+            <button className="com-back" onClick={() => navigate("/panel-alumno")}>
+              ← Volver
+            </button>
+            <p className="com-nav-title">{tutor.nombre}</p>
+            <span style={{
+              fontSize: '13px',
+              fontWeight: '700',
+              color: 'rgba(255,255,255,.82)',
+              background: 'rgba(255,255,255,.12)',
+              borderRadius: '8px',
+              padding: '5px 12px',
+              whiteSpace: 'nowrap'
+            }}>
+              {respondidas}/{TOTAL} preguntas
+            </span>
+          </nav>
+
+          {/* Body */}
+          <div className="com-body">
+            <div className="com-wrap">
+              <Comentario
+                tutor={tutor}
+                onEnviar={handleEnviarComentario}
+                cargando={cargandoComentario}
+                error={errorComentario}
+              />
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   if (!pregActual) return null
 
   const inicial = tutor.nombre
     .replace(/^(Dr\.|Dra\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "")
     .trim()[0] ?? "T"
-
-  const estaEnviando = fase === "enviando"
 
   return (
     <>
@@ -362,13 +534,10 @@ export default function Evaluacion() {
           user-select: none;
           transition: border-color .16s, background .16s, transform .18s, box-shadow .16s, opacity .2s;
         }
-        /* En fase "libre": clickeable con hover */
         .ev-opt-libre  { cursor: pointer; }
         .ev-opt-libre:hover:not(.ev-opt-sel) { border-color: #c7d2fe; background: #f4f6ff; transform: translateX(3px); }
-        /* En fase "transitando/enviando": bloqueado visualmente */
         .ev-opt-lock   { cursor: not-allowed; }
         .ev-opt-lock:not(.ev-opt-sel) { opacity: .28; }
-        /* Seleccionada */
         .ev-opt-sel { border-color: var(--ob); background: var(--obg); transform: translateX(5px); box-shadow: 0 2px 14px rgba(0,0,0,.06); }
 
         .ev-opnum { width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; background: #f1f5f9; color: #475569; transition: background .16s, color .16s; }
@@ -384,11 +553,6 @@ export default function Evaluacion() {
         .ev-hint { display: flex; align-items: center; gap: 8px; border-radius: 10px; padding: 11px 14px; margin-top: 14px; font-size: 13px; font-weight: 500; }
         .ev-hint-info { background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; }
         .ev-hint-ok   { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; font-weight: 600; }
-
-        /* enviando */
-        .ev-sending { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 0; }
-        .ev-spinner { width: 46px; height: 46px; border: 4px solid #e8eeff; border-top-color: #2563eb; border-radius: 50%; animation: _spin .7s linear infinite; }
-        .ev-stxt    { font-size: 15px; font-weight: 700; color: #1e40af; }
 
         @media (max-width: 480px) {
           .ev-opt { padding: 11px 12px; gap: 10px; }
@@ -429,7 +593,7 @@ export default function Evaluacion() {
               </div>
             </div>
 
-            {/* Mapa de dots — solo visual, sin navegación */}
+            {/* Mapa de dots */}
             <div className="ev-dots">
               {preguntas.map((p, i) => {
                 const estado = i === pagina ? "ev-d-c"
@@ -443,7 +607,7 @@ export default function Evaluacion() {
               })}
             </div>
 
-            {/* Card de pregunta — key = animKey fuerza re-mount + animación al avanzar */}
+            {/* Card de pregunta */}
             <div key={animKey} className="ev-card">
 
               {/* Categoría */}
@@ -477,63 +641,50 @@ export default function Evaluacion() {
               {/* Texto de pregunta */}
               <p className="ev-q">{pregActual.texto}</p>
 
-              {/* Pantalla de envío */}
-              {estaEnviando ? (
-                <div className="ev-sending">
-                  <div className="ev-spinner" />
-                  <p className="ev-stxt">Guardando tu evaluación…</p>
+              {/* Opciones */}
+              <div className="ev-opts">
+                {OPCIONES.map(op => {
+                  const sel = respActual === op.valor
+                  return (
+                    <div
+                      key={op.valor}
+                      className={[
+                        "ev-opt",
+                        sel        ? "ev-opt-sel"   : "",
+                        estaLibre  ? "ev-opt-libre" : "ev-opt-lock",
+                      ].filter(Boolean).join(" ")}
+                      style={{ "--oc": op.color, "--obg": op.bg, "--ob": op.border }}
+                      onClick={() => seleccionar(op.valor)}
+                    >
+                      <div className="ev-opnum">{op.valor}</div>
+                      <div className="ev-radio">
+                        <div className="ev-rdot" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p className="ev-oplbl">{op.label}</p>
+                        <p className="ev-oprub">{rubrica[op.valor]}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Hint: esperando selección */}
+              {estaLibre && (
+                <div className="ev-hint ev-hint-info">
+                  <span>💡</span>
+                  {esUltima
+                    ? "Al seleccionar, verás el formulario de comentarios."
+                    : "Selecciona una opción para avanzar a la siguiente pregunta."}
                 </div>
-              ) : (
-                <>
-                  {/* Opciones */}
-                  <div className="ev-opts">
-                    {OPCIONES.map(op => {
-                      const sel = respActual === op.valor
-                      return (
-                        <div
-                          key={op.valor}
-                          className={[
-                            "ev-opt",
-                            sel        ? "ev-opt-sel"   : "",
-                            estaLibre  ? "ev-opt-libre" : "ev-opt-lock",
-                          ].filter(Boolean).join(" ")}
-                          style={{ "--oc": op.color, "--obg": op.bg, "--ob": op.border }}
-                          onClick={() => seleccionar(op.valor)}
-                        >
-                          <div className="ev-opnum">{op.valor}</div>
-                          <div className="ev-radio">
-                            <div className="ev-rdot" />
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <p className="ev-oplbl">{op.label}</p>
-                            <p className="ev-oprub">{rubrica[op.valor]}</p>
-                          </div>
-                          {sel && !estaLibre && (
-                            <span style={{ fontSize: 16, flexShrink: 0 }}>🔒</span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+              )}
 
-                  {/* Hint: esperando selección */}
-                  {estaLibre && (
-                    <div className="ev-hint ev-hint-info">
-                      <span>💡</span>
-                      {esUltima
-                        ? "Al seleccionar, la evaluación se enviará automáticamente."
-                        : "Selecciona una opción para avanzar a la siguiente pregunta."}
-                    </div>
-                  )}
-
-                  {/* Hint: respuesta guardada, esperando avance */}
-                  {!estaLibre && !estaEnviando && (
-                    <div className="ev-hint ev-hint-ok">
-                      <span>✅</span>
-                      Respuesta guardada — avanzando a la siguiente pregunta…
-                    </div>
-                  )}
-                </>
+              {/* Hint: respuesta guardada */}
+              {!estaLibre && (
+                <div className="ev-hint ev-hint-ok">
+                  <span>✅</span>
+                  Respuesta guardada — avanzando…
+                </div>
               )}
             </div>
 

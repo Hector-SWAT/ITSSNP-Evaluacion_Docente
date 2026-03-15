@@ -424,6 +424,45 @@ export async function getPeriodoActivoAPI() {
   }
 }
 
+
+ * Guardar comentario de la evaluación
+ */
+ 
+/**
+ * Guardar comentario del alumno sobre el docente
+ * POST /api/evaluacion/comentario
+ */
+export async function guardarComentarioAPI(
+  idEvaluacion,
+  numControl,
+  idDocente,
+  comentario
+) {
+  try {
+    const response = await fetch(`${API_URL}/api/evaluacion/comentario`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        idEvaluacion,
+        numControl,
+        idDocente,
+        comentario: comentario.trim(),
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Error al guardar el comentario');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('❌ Error en guardarComentarioAPI:', error);
+    throw error;
+  }
+}
+
 // ============================================================
 //  EXPORTS
 // ============================================================

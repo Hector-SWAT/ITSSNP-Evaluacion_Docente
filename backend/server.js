@@ -632,6 +632,96 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
   }
 })
 
+
+/**
+ * EVALUACIÓN — POST /api/evaluacion/comentario
+ * Guarda el comentario del alumno sobre el docente evaluado
+ */
+app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+ 
+  const { idEvaluacion, numControl, idDocente, comentario } = req.body
+ 
+  // Validaciones básicas
+  if (!idEvaluacion || !numControl || !idDocente) {
+    return res.status(400).json({ 
+      error: "idEvaluacion, numControl e idDocente son requeridos." 
+    })
+  }
+ 
+  // El comentario es OPCIONAL, pero si se envía validamos
+  if (comentario && comentario.trim().length === 0) {
+    return res.status(400).json({ 
+      error: "El comentario no puede estar vacío." 
+    })
+  }
+ 
+  if (comentario && comentario.length > 1000) {
+    return res.status(400).json({ 
+      error: "El comentario no puede exceder 1000 caracteres." 
+    })
+  }
+ 
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+ 
+    // Verificar que la evaluación existe y pertenece al usuario
+    const [[ev]] = await conn.query(
+      `SELECT id_evaluacion, num_control, estado 
+       FROM evaluacion_docente 
+       WHERE id_evaluacion = ? LIMIT 1`,
+      [idEvaluacion]
+    )
+ 
+    if (!ev) {
+      await conn.rollback()
+      return res.status(404).json({ error: "Evaluación no encontrada." })
+    }
+ 
+    if (ev.num_control !== req.user.id) {
+      await conn.rollback()
+      return res.status(403).json({ error: "No es tu evaluación." })
+    }
+ 
+    // Si hay comentario, guardarlo
+    if (comentario && comentario.trim().length > 0) {
+      // Insertar o actualizar comentario
+      const [ins] = await conn.query(`
+        INSERT INTO comentario_evaluacion
+          (id_evaluacion, num_control, id_doce, comentario, visible)
+        VALUES (?, ?, ?, ?, 1)
+        ON DUPLICATE KEY UPDATE
+          comentario = VALUES(comentario),
+          fecha_creacion = CURRENT_TIMESTAMP
+      `, [idEvaluacion, numControl, idDocente, comentario.trim()])
+ 
+      console.log(`✅ Comentario guardado para evaluación ${idEvaluacion}`)
+    } else {
+      console.log(`⚠️ Comentario vacío/opcional para evaluación ${idEvaluacion}`)
+    }
+ 
+    await conn.commit()
+ 
+    return res.json({
+      success: true,
+      mensaje: "Comentario guardado correctamente.",
+      idEvaluacion
+    })
+ 
+  } catch (err) {
+    await conn.rollback()
+    console.error("❌ Error en POST /api/evaluacion/comentario:", err)
+    return res.status(500).json({ 
+      error: "Error al guardar el comentario: " + err.message 
+    })
+  } finally {
+    conn.release()
+  }
+})
+
 /* ══════════════════════════════════════════════════════════════
    DASHBOARD — GET /api/dashboard/docentes
 ══════════════════════════════════════════════════════════════ */

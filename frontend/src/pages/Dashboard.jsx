@@ -108,22 +108,37 @@ function exportarCSV(resultado, grupoSeleccionado) {
   if (!resultado) return
   const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   const rows = []
+  
   rows.push(["SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP"])
+  rows.push([""])
+  rows.push(["INFORMACIÓN DEL DOCENTE"])
   rows.push(["Docente:", docente.nombre])
   rows.push(["Periodo:", periodo.nombre])
   if (grupoSeleccionado) rows.push(["Grupo:", grupoSeleccionado])
+  rows.push([""])
+  
+  rows.push(["RESULTADOS GENERALES"])
   rows.push(["Promedio general:", promedioGeneral, "Clasificación:", clasificacion])
   rows.push([])
-  rows.push(["#","Criterio","Promedio"])
-  CATEGORIAS.forEach((cat, i) => rows.push([i+1, cat.nombre, promediosCat[cat.id]?.toFixed(2) ?? "—"]))
+  
+  rows.push(["RESULTADOS POR CRITERIO"])
+  rows.push(["#","Criterio","Promedio","Clasificación"])
+  CATEGORIAS.forEach((cat, i) => {
+    const val = promediosCat[cat.id] ?? 0
+    const clasificacionCat = val >= 4.5 ? "EXCELENTE" : val >= 3.5 ? "MUY BUENO" : val >= 2.5 ? "BUENO" : val >= 1.5 ? "REGULAR" : "DEFICIENTE"
+    rows.push([i+1, cat.nombre, val.toFixed(2), clasificacionCat])
+  })
   rows.push([])
-  rows.push(["ALUMNOS QUE COMPLETARON LA ENCUESTA"])
+  
+  rows.push(["ALUMNOS QUE COMPLETARON LA ENCUESTA", `Total: ${completaron.length}`])
   rows.push(["No. Control","Nombre","Grupo","Carrera"])
   completaron.forEach(a => rows.push([a.numControl, a.nombre, a.grupo || "—", a.carrera]))
   rows.push([])
-  rows.push(["ALUMNOS PENDIENTES"])
+  
+  rows.push(["ALUMNOS PENDIENTES", `Total: ${faltantes.length}`])
   rows.push(["No. Control","Nombre","Grupo","Carrera"])
   faltantes.forEach(a => rows.push([a.numControl, a.nombre, a.grupo || "—", a.carrera]))
+  
   const csv  = rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")).join("\n")
   const blob = new Blob(["\uFEFF" + csv], { type:"text/csv;charset=utf-8;" })
   const url  = URL.createObjectURL(blob)
@@ -138,29 +153,41 @@ function exportarCSV(resultado, grupoSeleccionado) {
 function exportarExcel(resultado, grupoSeleccionado) {
   if (!resultado) return
   const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
-  const cell    = (v) => `<Cell><Data ss:Type="String">${String(v ?? "")}</Data></Cell>`
+  
+  const cell    = (v) => `<Cell><Data ss:Type="String">${String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</Data></Cell>`
   const numCell = (v) => `<Cell><Data ss:Type="Number">${v}</Data></Cell>`
+  
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="Resultados"><Table>
+<Worksheet ss:Name="Evaluación"><Table>
 <Row><Cell><Data ss:Type="String">SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Docente: ${docente.nombre}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Periodo: ${periodo.nombre}</Data></Cell></Row>
-${grupoSeleccionado ? `<Row><Cell><Data ss:Type="String">Grupo: ${grupoSeleccionado}</Data></Cell></Row>` : ""}
-<Row><Cell><Data ss:Type="String">Promedio general: ${promedioGeneral}</Data></Cell><Cell><Data ss:Type="String">Clasificación: ${clasificacion}</Data></Cell></Row>
 <Row/>
-<Row><Cell><Data ss:Type="String">#</Data></Cell><Cell><Data ss:Type="String">Criterio</Data></Cell><Cell><Data ss:Type="String">Promedio</Data></Cell></Row>
-${CATEGORIAS.map((cat,i) => `<Row>${numCell(i+1)}${cell(cat.nombre)}${numCell((promediosCat[cat.id]??0).toFixed(2))}</Row>`).join("")}
+<Row><Cell><Data ss:Type="String">INFORMACIÓN DEL DOCENTE</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Docente:</Data></Cell>${cell(docente.nombre)}</Row>
+<Row><Cell><Data ss:Type="String">Periodo:</Data></Cell>${cell(periodo.nombre)}</Row>
+${grupoSeleccionado ? `<Row><Cell><Data ss:Type="String">Grupo:</Data></Cell>${cell(grupoSeleccionado)}</Row>` : ""}
 <Row/>
-<Row><Cell><Data ss:Type="String">ALUMNOS QUE COMPLETARON</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">RESULTADOS GENERALES</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Promedio general:</Data></Cell>${numCell(promedioGeneral)}<Cell><Data ss:Type="String">Clasificación:</Data></Cell>${cell(clasificacion)}</Row>
+<Row/>
+<Row><Cell><Data ss:Type="String">RESULTADOS POR CRITERIO</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">#</Data></Cell><Cell><Data ss:Type="String">Criterio</Data></Cell><Cell><Data ss:Type="String">Promedio</Data></Cell><Cell><Data ss:Type="String">Clasificación</Data></Cell></Row>
+${CATEGORIAS.map((cat,i) => {
+  const val = promediosCat[cat.id] ?? 0
+  const clasificacionCat = val >= 4.5 ? "EXCELENTE" : val >= 3.5 ? "MUY BUENO" : val >= 2.5 ? "BUENO" : val >= 1.5 ? "REGULAR" : "DEFICIENTE"
+  return `<Row>${numCell(i+1)}${cell(cat.nombre)}${numCell(val.toFixed(2))}${cell(clasificacionCat)}</Row>`
+}).join("")}
+<Row/>
+<Row><Cell><Data ss:Type="String">ALUMNOS QUE COMPLETARON LA ENCUESTA</Data></Cell><Cell><Data ss:Type="String">Total: ${completaron.length}</Data></Cell></Row>
 <Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Grupo</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
 ${completaron.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.grupo || "—")}${cell(a.carrera)}</Row>`).join("")}
 <Row/>
-<Row><Cell><Data ss:Type="String">ALUMNOS PENDIENTES</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">ALUMNOS PENDIENTES</Data></Cell><Cell><Data ss:Type="String">Total: ${faltantes.length}</Data></Cell></Row>
 <Row><Cell><Data ss:Type="String">No. Control</Data></Cell><Cell><Data ss:Type="String">Nombre</Data></Cell><Cell><Data ss:Type="String">Grupo</Data></Cell><Cell><Data ss:Type="String">Carrera</Data></Cell></Row>
 ${faltantes.map(a => `<Row>${numCell(a.numControl)}${cell(a.nombre)}${cell(a.grupo || "—")}${cell(a.carrera)}</Row>`).join("")}
 </Table></Worksheet></Workbook>`
+
   const blob = new Blob([xml], { type:"application/vnd.ms-excel;charset=utf-8;" })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement("a")
@@ -204,13 +231,8 @@ export default function Dashboard() {
   const [tabAlumnos, setTabAlumnos] = useState("completaron")
   const [vistaGraf,  setVistaGraf]  = useState("barras")
 
-  /* ── Agrupar docentes por departamento ── */
-  const docentesPorDepartamento = docentes.reduce((acc, doc) => {
-    const dept = doc.departamento || "Sin Departamento"
-    if (!acc[dept]) acc[dept] = []
-    acc[dept].push(doc)
-    return acc
-  }, {})
+  /* ── Agrupar docentes alfabéticamente (sin departamentos) ── */
+  const docentesOrdenados = [...docentes].sort((a, b) => a.nombre.localeCompare(b.nombre))
 
   /* ── Verificar autenticación al cargar ── */
   useEffect(() => {
@@ -228,10 +250,11 @@ export default function Dashboard() {
       try {
         setCargandoDocentes(true)
         const docs = await getDocentesAPI()
+        console.log("✅ Docentes cargados:", docs)
         setDocentes(docs)
         setErrorDocentes(null)
       } catch (err) {
-        console.error("Error cargando docentes:", err)
+        console.error("❌ Error cargando docentes:", err)
         setErrorDocentes(err.message)
         if (err.message.includes("Token") || err.message.includes("401")) {
           navigate("/login", { replace: true })
@@ -243,12 +266,13 @@ export default function Dashboard() {
       try {
         setCargandoPeriodos(true)
         const pers = await getPeriodosAPI()
+        console.log("✅ Periodos cargados:", pers)
         setPeriodos(pers)
         setErrorPeriodos(null)
         const activo = pers.find(p => p.activo === 1 || p.activo === true)
         if (activo) setIdPeriodo(String(activo.id))
       } catch (err) {
-        console.error("Error cargando periodos:", err)
+        console.error("❌ Error cargando periodos:", err)
         setErrorPeriodos(err.message)
         if (err.message.includes("Token") || err.message.includes("401")) {
           navigate("/login", { replace: true })
@@ -266,18 +290,21 @@ export default function Dashboard() {
     if (!idDocente || !idPeriodo) {
       setGrupos([])
       setIdGrupo("")
+      setErrorGrupos(null)
       return
     }
 
     const cargarGrupos = async () => {
       try {
         setCargandoGrupos(true)
+        console.log(`🔄 Cargando grupos para docente ${idDocente}, periodo ${idPeriodo}`)
         const gruposData = await getGruposAPI(Number(idDocente), Number(idPeriodo))
-        setGrupos(gruposData)
+        console.log("✅ Grupos cargados:", gruposData)
+        setGrupos(gruposData || [])
         setErrorGrupos(null)
         setIdGrupo("")
       } catch (err) {
-        console.error("Error cargando grupos:", err)
+        console.error("❌ Error cargando grupos:", err)
         setErrorGrupos(err.message)
         setGrupos([])
         setIdGrupo("")
@@ -299,9 +326,16 @@ export default function Dashboard() {
     setLoading(true)
     setError(null)
     setResultado(null)
+    
+    console.log(`📊 Cargando resultados: docente=${idDocente}, periodo=${idPeriodo}, grupo=${idGrupo || "todos"}`)
+    
     getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
-      .then(data => setResultado(data))
+      .then(data => {
+        console.log("✅ Resultados cargados:", data)
+        setResultado(data)
+      })
       .catch(err => {
+        console.error("❌ Error cargando resultados:", err)
         setError(err.message || "Error al obtener resultados")
         if (err.message.includes("Token") || err.message.includes("401")) {
           navigate("/login", { replace: true })
@@ -460,12 +494,8 @@ export default function Dashboard() {
                 {!cargandoDocentes && !errorDocentes && (
                   <>
                     <option value="">— Selecciona un docente —</option>
-                    {Object.entries(docentesPorDepartamento).map(([dept, docs]) => (
-                      <optgroup key={dept} label={dept}>
-                        {docs.map(d => (
-                          <option key={d.id} value={d.id}>{d.nombre}</option>
-                        ))}
-                      </optgroup>
+                    {docentesOrdenados.map(d => (
+                      <option key={d.id} value={d.id}>{d.nombre}</option>
                     ))}
                   </>
                 )}
@@ -507,12 +537,14 @@ export default function Dashboard() {
                   <option value="">Cargando grupos...</option>
                 ) : errorGrupos ? (
                   <option value="">Error al cargar grupos</option>
+                ) : grupos.length === 0 ? (
+                  <option value="">Sin grupos disponibles</option>
                 ) : (
                   <>
                     <option value="">— Todos los grupos —</option>
                     {grupos.map(g => (
                       <option key={g.id} value={g.id}>
-                        {g.clave}
+                        {g.clave || `Grupo ${g.id}`}
                       </option>
                     ))}
                   </>
@@ -564,6 +596,7 @@ export default function Dashboard() {
           {/* ── Resultados ── */}
           {!loading && !error && resultado && (() => {
             const cs = clasifStyle
+            const grupoNombre = idGrupo ? grupos.find(g => g.id == idGrupo)?.clave : "Todos"
             return (
               <>
                 {/* Fila 1: Resumen + Progreso */}
@@ -674,10 +707,10 @@ export default function Dashboard() {
                       </table>
                     </div>
                     <div className="db-export-row">
-                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, idGrupo ? grupos.find(g => g.id == idGrupo)?.clave : "Todos")}>
+                      <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, grupoNombre)}>
                         <span>📄</span> Exportar CSV
                       </button>
-                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, idGrupo ? grupos.find(g => g.id == idGrupo)?.clave : "Todos")}>
+                      <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, grupoNombre)}>
                         <span>📊</span> Exportar Excel
                       </button>
                     </div>

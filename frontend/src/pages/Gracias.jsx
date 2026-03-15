@@ -1,264 +1,405 @@
-import { useEffect, useState } from "react"
+/**
+ * Gracias.jsx — Pantalla de agradecimiento después de evaluar
+ * 
+ * Muestra:
+ * - Nombre del alumno
+ * - Carrera
+ * - Fecha de evaluación
+ * - Botón para continuar con evaluaciones faltantes
+ */
+
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
-import { getPerfilAlumno, yaEvaluado } from "../services/evaluacionData"
+import { useState, useEffect } from "react"
 
 export default function Gracias() {
-  const navigate  = useNavigate()
-  const location  = useLocation()
-  const { user }  = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { user } = useAuth()
+  
+  const [alumnoInfo, setAlumnoInfo] = useState({
+    nombre: user?.nombre || "Alumno",
+    carrera: location.state?.carrera || "Carrera",
+    fecha: new Date().toLocaleDateString('es-MX', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  })
 
-  const tutor         = location.state?.tutor ?? null
-  const totalPreguntas = location.state?.totalPreguntas ?? 17
+  const tutor = location.state?.tutor ?? { nombre: "Tutor" }
+  const totalPreguntas = location.state?.totalPreguntas ?? 0
 
-  /* Cuenta cuántas evaluaciones quedan por hacer */
-  const [pendientes, setPendientes] = useState(0)
-  useEffect(() => {
-    if (!user?.id) return
-    const perfil  = getPerfilAlumno(user.id)
-    const quedan  = perfil.tutores.filter(t => !yaEvaluado(user.id, t.id)).length
-    setPendientes(quedan)
-  }, [user])
+  const handleContinuar = () => {
+    navigate("/panel-alumno", { replace: true })
+  }
 
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap"
+        rel="stylesheet"
+      />
 
       <style>{`
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body, #root { height: 100%; }
-
-        @keyframes _fadeUp   { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes _pop      { 0%{transform:scale(.6);opacity:0} 70%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
-        @keyframes _confetti {
-          0%   { transform: translateY(-10px) rotate(0deg);   opacity:1; }
-          100% { transform: translateY(120px) rotate(540deg); opacity:0; }
+        *, *::before, *::after {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
         }
 
-        .gr-root {
+        html, body, #root {
+          height: 100%;
+        }
+
+        @keyframes _fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes _slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes _bounce {
+          0%, 100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.05);
+          }
+        }
+
+        .gracias-root {
           font-family: 'DM Sans', sans-serif;
           min-height: 100dvh;
-          background: linear-gradient(145deg, #0d2660 0%, #1648b8 50%, #0b7ec9 100%);
-          display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          padding: 32px 20px;
-          position: relative; overflow: hidden;
+          background: linear-gradient(135deg, #0d2660 0%, #1648b8 55%, #0b7ec9 100%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: clamp(20px, 5vw, 40px);
         }
 
-        /* Malla de puntos decorativa */
-        .gr-root::before {
-          content: ''; position: absolute; inset: 0;
-          background-image: radial-gradient(circle, rgba(255,255,255,.08) 1px, transparent 1px);
-          background-size: 26px 26px; pointer-events: none;
+        .gracias-container {
+          max-width: 600px;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 28px;
+          animation: _fadeIn 0.6s ease both;
         }
 
-        /* Círculos decorativos */
-        .gr-ring1 {
-          position: absolute; width: 500px; height: 500px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.07);
-          right: -160px; top: -160px; pointer-events: none;
-        }
-        .gr-ring2 {
-          position: absolute; width: 360px; height: 360px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.05);
-          left: -100px; bottom: -100px; pointer-events: none;
-        }
-
-        /* Confetti items */
-        .gr-confetti {
-          position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-          pointer-events: none; overflow: hidden;
-        }
-        .gr-c {
-          position: absolute; width: 8px; height: 8px; border-radius: 2px;
-          animation: _confetti linear forwards;
-          top: -12px;
-        }
-
-        /* Card central */
-        .gr-card {
-          background: #fff; border-radius: 28px;
-          padding: clamp(32px,5vw,56px) clamp(28px,5vw,56px);
-          max-width: 520px; width: 100%;
+        .gracias-header {
           text-align: center;
-          box-shadow: 0 32px 80px rgba(0,0,0,.35);
-          position: relative; z-index: 1;
-          animation: _fadeUp .45s cubic-bezier(.16,1,.3,1) both;
+          color: #fff;
         }
 
-        /* Ícono */
-        .gr-icon-wrap {
-          width: 88px; height: 88px; border-radius: 50%; margin: 0 auto 24px;
-          background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-          border: 3px solid #86efac;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 40px;
-          animation: _pop .5s cubic-bezier(.16,1,.3,1) .1s both;
+        .gracias-icon {
+          font-size: 80px;
+          margin-bottom: 16px;
+          animation: _bounce 2s ease-in-out infinite;
+          display: inline-block;
         }
 
-        .gr-badge {
-          display: inline-flex; align-items: center; gap: 6px;
-          background: #f0fdf4; border: 1.5px solid #86efac;
-          border-radius: 20px; padding: 5px 14px;
-          font-size: 11.5px; font-weight: 700; color: #15803d;
-          letter-spacing: .04em; text-transform: uppercase;
+        .gracias-title {
+          font-size: clamp(28px, 6vw, 42px);
+          font-weight: 800;
+          margin-bottom: 8px;
+          letter-spacing: -0.5px;
+        }
+
+        .gracias-subtitle {
+          font-size: 16px;
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.85);
+          line-height: 1.6;
+        }
+
+        .gracias-card {
+          background: #fff;
+          border-radius: 20px;
+          padding: clamp(24px, 5vw, 36px);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: _slideUp 0.7s ease both;
+          animation-delay: 0.1s;
+        }
+
+        .gracias-message {
+          margin-bottom: 24px;
+        }
+
+        .gracias-message-title {
+          font-size: 18px;
+          font-weight: 700;
+          color: #0f172a;
+          margin-bottom: 12px;
+        }
+
+        .gracias-message-text {
+          font-size: 15px;
+          font-weight: 400;
+          color: #475569;
+          line-height: 1.8;
           margin-bottom: 16px;
         }
 
-        .gr-title {
-          font-size: clamp(24px,3vw,34px); font-weight: 800;
-          color: #0f172a; letter-spacing: -.03em; line-height: 1.2;
-          margin-bottom: 10px;
-        }
-        .gr-sub {
-          font-size: 15px; color: #475569; line-height: 1.65;
-          margin-bottom: 28px;
+        .gracias-info {
+          background: #f0f9ff;
+          border-left: 4px solid #0369a1;
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 20px;
         }
 
-        /* Info del tutor evaluado */
-        .gr-tutor-box {
-          background: #f8faff; border: 1.5px solid #e8eeff;
-          border-radius: 14px; padding: 14px 18px;
-          display: flex; align-items: center; gap: 12px;
-          margin-bottom: 24px; text-align: left;
-        }
-        .gr-t-avatar {
-          width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-          background: linear-gradient(135deg, #e8eeff, #c7d7ff);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 17px; font-weight: 800; color: #1e40af;
-        }
-        .gr-t-name { font-size: 14px; font-weight: 700; color: #0f172a; }
-        .gr-t-mat  { font-size: 12px; color: #64748b; margin-top: 2px; }
-        .gr-t-qs   {
-          display: inline-flex; align-items: center; gap: 5px;
-          background: #dcfce7; border-radius: 6px;
-          padding: 2px 8px; font-size: 11px; font-weight: 700; color: #15803d;
-          margin-top: 5px;
+        .gracias-info-item {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          margin-bottom: 12px;
         }
 
-        /* Chips de garantías */
-        .gr-chips {
-          display: flex; flex-wrap: wrap; gap: 8px;
-          justify-content: center; margin-bottom: 28px;
-        }
-        .gr-chip {
-          display: flex; align-items: center; gap: 6px;
-          background: #f1f5ff; border: 1px solid #c7d2fe;
-          border-radius: 8px; padding: 6px 12px;
-          font-size: 12px; font-weight: 600; color: #3730a3;
+        .gracias-info-item:last-child {
+          margin-bottom: 0;
         }
 
-        /* Botones */
-        .gr-btns { display: flex; flex-direction: column; gap: 10px; }
-        .gr-btn-primary {
-          width: 100%; height: 52px; border-radius: 13px; border: none;
-          background: linear-gradient(135deg, #1e40af, #2563eb 55%, #0891b2);
-          font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 700;
-          color: #fff; cursor: pointer;
-          box-shadow: 0 4px 18px rgba(37,99,235,.32);
-          transition: all .18s; position: relative; overflow: hidden;
+        .gracias-info-label {
+          font-size: 12px;
+          font-weight: 600;
+          text-transform: uppercase;
+          color: #0369a1;
+          letter-spacing: 0.5px;
         }
-        .gr-btn-primary::after {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(rgba(255,255,255,.10), transparent);
-          pointer-events: none;
-        }
-        .gr-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 7px 24px rgba(37,99,235,.40); }
-        .gr-btn-secondary {
-          width: 100%; height: 48px; border-radius: 13px;
-          background: #f1f5f9; border: 1.5px solid #e2e8f0;
-          font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
-          color: #475569; cursor: pointer; transition: all .18s;
-        }
-        .gr-btn-secondary:hover { background: #e2e8f0; }
 
-        .gr-footer {
-          margin-top: 22px; font-size: 11.5px; color: rgba(255,255,255,.45);
-          position: relative; z-index: 1; text-align: center;
+        .gracias-info-value {
+          font-size: 15px;
+          font-weight: 700;
+          color: #0f172a;
+        }
+
+        .gracias-divider {
+          height: 1px;
+          background: #e2e8f0;
+          margin: 20px 0;
+        }
+
+        .gracias-stats {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          margin: 20px 0;
+        }
+
+        .gracias-stat {
+          background: #f8fafc;
+          border-radius: 12px;
+          padding: 16px;
+          text-align: center;
+          border: 1px solid #e2e8f0;
+        }
+
+        .gracias-stat-value {
+          font-size: 28px;
+          font-weight: 800;
+          color: #0369a1;
+          margin-bottom: 4px;
+        }
+
+        .gracias-stat-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .gracias-cta {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-top: 24px;
+        }
+
+        .gracias-btn {
+          padding: 14px 24px;
+          border: none;
+          border-radius: 12px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+
+        .gracias-btn-primary {
+          background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+          color: #fff;
+          box-shadow: 0 8px 24px rgba(3, 105, 161, 0.3);
+        }
+
+        .gracias-btn-primary:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 32px rgba(3, 105, 161, 0.4);
+        }
+
+        .gracias-btn-primary:active {
+          transform: translateY(0);
+        }
+
+        .gracias-btn-secondary {
+          background: #f1f5f9;
+          color: #475569;
+          border: 1px solid #cbd5e1;
+        }
+
+        .gracias-btn-secondary:hover {
+          background: #e2e8f0;
+        }
+
+        .gracias-btn-icon {
+          font-size: 18px;
+        }
+
+        .gracias-footer {
+          text-align: center;
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .gracias-footer-text {
+          font-size: 13px;
+          color: #64748b;
+          line-height: 1.6;
+        }
+
+        .gracias-footer-highlight {
+          color: #0369a1;
+          font-weight: 600;
+        }
+
+        @media (max-width: 480px) {
+          .gracias-icon {
+            font-size: 60px;
+          }
+
+          .gracias-title {
+            font-size: 28px;
+          }
+
+          .gracias-subtitle {
+            font-size: 14px;
+          }
+
+          .gracias-stats {
+            grid-template-columns: 1fr;
+          }
+
+          .gracias-message-text {
+            font-size: 14px;
+          }
         }
       `}</style>
 
-      {/* Partículas de confetti */}
-      <div className="gr-confetti">
-        {Array.from({length: 22}).map((_, i) => (
-          <div
-            key={i}
-            className="gr-c"
-            style={{
-              left:             `${(i * 4.7) % 100}%`,
-              background:       ["#22c55e","#3b82f6","#f59e0b","#ec4899","#8b5cf6","#06b6d4"][i % 6],
-              animationDelay:   `${(i * 0.13) % 1.4}s`,
-              animationDuration:`${1.2 + (i % 5) * 0.3}s`,
-              width:            `${6 + (i % 4) * 3}px`,
-              height:           `${6 + (i % 3) * 3}px`,
-            }}
-          />
-        ))}
-      </div>
+      <div className="gracias-root">
+        <div className="gracias-container">
+          {/* Encabezado */}
+          <div className="gracias-header">
+            <div className="gracias-icon">✅</div>
+            <h1 className="gracias-title">¡Evaluación Completada!</h1>
+            <p className="gracias-subtitle">
+              Gracias por tu tiempo y retroalimentación<br />
+              Tu opinión es valiosa para mejorar la calidad educativa
+            </p>
+          </div>
 
-      <div className="gr-ring1" />
-      <div className="gr-ring2" />
-
-      <div className="gr-card">
-
-        {/* Ícono */}
-        <div className="gr-icon-wrap">✅</div>
-
-        {/* Badge */}
-        <div className="gr-badge">
-          <span>★</span> Evaluación completada
-        </div>
-
-        <h1 className="gr-title">¡Gracias por tu participación!</h1>
-        <p className="gr-sub">
-          Tu evaluación ha sido registrada exitosamente.<br/>
-          Tus respuestas son <strong>anónimas y confidenciales</strong>.
-        </p>
-
-        {/* Tutor evaluado */}
-        {tutor && (
-          <div className="gr-tutor-box">
-            <div className="gr-t-avatar">
-              {tutor.nombre.replace(/^(Dr\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i,"").trim()[0] ?? "T"}
+          {/* Tarjeta principal */}
+          <div className="gracias-card">
+            {/* Mensaje personalizado */}
+            <div className="gracias-message">
+              <h2 className="gracias-message-title">
+                ¡Agradecemos tu participación!
+              </h2>
+              <p className="gracias-message-text">
+                Hola <span style={{ fontWeight: 700, color: '#0f172a' }}>{alumnoInfo.nombre}</span>,
+                hemos recibido tu evaluación del docente <span style={{ fontWeight: 700, color: '#0f172a' }}>{tutor.nombre}</span>.
+                Tu retroalimentación contribuye significativamente a nuestro proceso de mejora continua.
+              </p>
             </div>
-            <div>
-              <p className="gr-t-name">{tutor.nombre}</p>
-              <p className="gr-t-mat">{tutor.materia}</p>
-              <span className="gr-t-qs">✓ {totalPreguntas} preguntas respondidas</span>
+
+            {/* Información del alumno */}
+            <div className="gracias-info">
+              <div className="gracias-info-item">
+                <span className="gracias-info-label">👤 Nombre del Alumno</span>
+                <span className="gracias-info-value">{alumnoInfo.nombre}</span>
+              </div>
+              <div className="gracias-info-item">
+                <span className="gracias-info-label">🎓 Carrera</span>
+                <span className="gracias-info-value">{alumnoInfo.carrera}</span>
+              </div>
+              <div className="gracias-info-item">
+                <span className="gracias-info-label">📅 Fecha de Evaluación</span>
+                <span className="gracias-info-value">{alumnoInfo.fecha}</span>
+              </div>
+            </div>
+
+            {/* Estadísticas */}
+            <div className="gracias-stats">
+              <div className="gracias-stat">
+                <div className="gracias-stat-value">{totalPreguntas}</div>
+                <div className="gracias-stat-label">Preguntas respondidas</div>
+              </div>
+              <div className="gracias-stat">
+                <div className="gracias-stat-value">100%</div>
+                <div className="gracias-stat-label">Evaluación completada</div>
+              </div>
+            </div>
+
+            <div className="gracias-divider" />
+
+            {/* Botones de acción */}
+            <div className="gracias-cta">
+              <button
+                className="gracias-btn gracias-btn-primary"
+                onClick={handleContinuar}
+              >
+                <span className="gracias-btn-icon">→</span>
+                Continuar con evaluaciones faltantes
+              </button>
+            </div>
+
+            {/* Pie */}
+            <div className="gracias-footer">
+              <p className="gracias-footer-text">
+                Si aún tienes <span className="gracias-footer-highlight">docentes por evaluar</span>,
+                serás redirigido a tu panel de control donde podrás continuar con las evaluaciones pendientes.
+              </p>
             </div>
           </div>
-        )}
-
-        {/* Chips informativos */}
-        <div className="gr-chips">
-          <span className="gr-chip">🔒 Respuestas anónimas</span>
-          <span className="gr-chip">📊 Datos protegidos</span>
-          <span className="gr-chip">✓ Sin modificaciones</span>
-        </div>
-
-        {/* Botones */}
-        <div className="gr-btns">
-          {pendientes > 0 ? (
-            <button className="gr-btn-primary" onClick={() => navigate("/panel-alumno")}>
-              Continuar ({pendientes} evaluación{pendientes > 1 ? "es" : ""} pendiente{pendientes > 1 ? "s" : ""}) →
-            </button>
-          ) : (
-            <button className="gr-btn-primary" onClick={() => navigate("/panel-alumno")}>
-              Ver resumen de mis evaluaciones →
-            </button>
-          )}
-          <button className="gr-btn-secondary" onClick={() => navigate("/panel-alumno")}>
-            Volver al panel
-          </button>
         </div>
       </div>
-
-      <p className="gr-footer">
-        © 2026 · ITSSNP · Sistema de Evaluación Docente · SWATCorps
-      </p>
     </>
   )
 }

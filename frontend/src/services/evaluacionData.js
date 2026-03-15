@@ -1,7 +1,6 @@
 /* ================================================================
    evaluacionData.js  →  src/services/evaluacionData.js
-   VERSIÓN REAL CONECTADA A BASE DE DATOS - CORREGIDA
-   CAMBIOS AGREGADOS: getGruposAPI + soporte de idGrupo en getResultadosDocenteAPI
+   VERSIÓN REAL CONECTADA A BASE DE DATOS - CORREGIDA SIN ERRORES
    ================================================================ */
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://itssnp-evaluaciondocente-production.up.railway.app';
@@ -38,68 +37,68 @@ export const CATEGORIAS = [
 ];
 
 export const RUBRICA = {
-  1:{
-    5:"Detectó completamente mis necesidades y ofreció un apoyo excelente.",
-    4:"Detectó bien mis necesidades y ofreció un apoyo adecuado.",
-    3:"Detectó mis necesidades de forma general y ofreció apoyo limitado.",
-    2:"Detectó algunas de mis necesidades, pero no ofreció apoyo adecuado.",
-    1:"No detectó mis necesidades ni ofreció apoyo."
+  1: {
+    5: "Detectó completamente mis necesidades y ofreció un apoyo excelente.",
+    4: "Detectó bien mis necesidades y ofreció un apoyo adecuado.",
+    3: "Detectó mis necesidades de forma general y ofreció apoyo limitado.",
+    2: "Detectó algunas de mis necesidades, pero no ofreció apoyo adecuado.",
+    1: "No detectó mis necesidades ni ofreció apoyo."
   },
-  2:{
-    5:"Realizó un seguimiento constante y me brindó apoyo eficaz en todo momento.",
-    4:"Realizó un buen seguimiento y me apoyó en las materias problemáticas.",
-    3:"Realizó seguimiento regular pero no siempre me apoyó en mis problemáticas.",
-    2:"Hizo un seguimiento ocasional pero no constante.",
-    1:"Nunca realizó seguimiento de mi desempeño."
+  2: {
+    5: "Realizó un seguimiento constante y me brindó apoyo eficaz en todo momento.",
+    4: "Realizó un buen seguimiento y me apoyó en las materias problemáticas.",
+    3: "Realizó seguimiento regular pero no siempre me apoyó en mis problemáticas.",
+    2: "Hizo un seguimiento ocasional pero no constante.",
+    1: "Nunca realizó seguimiento de mi desempeño."
   },
-  3:{
-    5:"Siempre hizo un seguimiento constante y su retroalimentación fue muy valiosa.",
-    4:"Hizo un buen seguimiento y me dio retroalimentación útil.",
-    3:"Hizo un seguimiento irregular con retroalimentación limitada.",
-    2:"Hizo un seguimiento mínimo y su retroalimentación fue escasa.",
-    1:"Nunca hizo seguimiento ni dio retroalimentación."
+  3: {
+    5: "Siempre hizo un seguimiento constante y su retroalimentación fue muy valiosa.",
+    4: "Hizo un buen seguimiento y me dio retroalimentación útil.",
+    3: "Hizo un seguimiento irregular con retroalimentación limitada.",
+    2: "Hizo un seguimiento mínimo y su retroalimentación fue escasa.",
+    1: "Nunca hizo seguimiento ni dio retroalimentación."
   },
-  4:{
-    5:"La comunicación fue excelente y siempre me sentí en confianza.",
-    4:"La comunicación fue buena y generó confianza en muchas ocasiones.",
-    3:"La comunicación fue irregular, aunque a veces me sentí en confianza.",
-    2:"La comunicación fue escasa y no generó confianza.",
-    1:"No hubo comunicación ni confianza."
+  4: {
+    5: "La comunicación fue excelente y siempre me sentí en confianza.",
+    4: "La comunicación fue buena y generó confianza en muchas ocasiones.",
+    3: "La comunicación fue irregular, aunque a veces me sentí en confianza.",
+    2: "La comunicación fue escasa y no generó confianza.",
+    1: "No hubo comunicación ni confianza."
   },
-  5:{
-    5:"Siempre asistió y demostró un alto nivel de compromiso con mi desarrollo.",
-    4:"Asistió a las sesiones y demostró un buen nivel de compromiso.",
-    3:"Asistió a la mayoría de las sesiones, pero su compromiso fue irregular.",
-    2:"Asistió a pocas sesiones y su compromiso fue mínimo.",
-    1:"No asistió ni mostró compromiso."
+  5: {
+    5: "Siempre asistió y demostró un alto nivel de compromiso con mi desarrollo.",
+    4: "Asistió a las sesiones y demostró un buen nivel de compromiso.",
+    3: "Asistió a la mayoría de las sesiones, pero su compromiso fue irregular.",
+    2: "Asistió a pocas sesiones y su compromiso fue mínimo.",
+    1: "No asistió ni mostró compromiso."
   },
-  6:{
-    5:"Me motivó siempre y me dio una excelente orientación para mi desarrollo.",
-    4:"Me motivó constantemente y me ofreció una buena orientación.",
-    3:"Me motivó algunas veces y la orientación fue general.",
-    2:"Me motivó de manera limitada y no me brindó mucha orientación.",
-    1:"No me motivó ni me ofreció orientación."
+  6: {
+    5: "Me motivó siempre y me dio una excelente orientación para mi desarrollo.",
+    4: "Me motivó constantemente y me ofreció una buena orientación.",
+    3: "Me motivó algunas veces y la orientación fue general.",
+    2: "Me motivó de manera limitada y no me brindó mucha orientación.",
+    1: "No me motivó ni me ofreció orientación."
   },
-  7:{
-    5:"Su impacto fue muy positivo, ayudándome a evitar la reprobación y el abandono.",
-    4:"Su impacto fue positivo y me ayudó a mejorar mi rendimiento.",
-    3:"Su impacto fue moderado, pero no evitó todas las dificultades.",
-    2:"Tuvo un impacto muy limitado en mi desempeño.",
-    1:"No tuvo ningún impacto positivo."
+  7: {
+    5: "Su impacto fue muy positivo, ayudándome a evitar la reprobación y el abandono.",
+    4: "Su impacto fue positivo y me ayudó a mejorar mi rendimiento.",
+    3: "Su impacto fue moderado, pero no evitó todas las dificultades.",
+    2: "Tuvo un impacto muy limitado en mi desempeño.",
+    1: "No tuvo ningún impacto positivo."
   },
-  8:{
-    5:"Aplicó estrategias excelentes y me ayudó a superar todas mis dificultades.",
-    4:"Aplicó buenas estrategias y me ayudó a superar algunas dificultades.",
-    3:"Aplicó algunas estrategias, pero no siempre resultaron efectivas.",
-    2:"Aplicó estrategias mínimas o ineficaces.",
-    1:"No aplicó ninguna estrategia de rescate."
+  8: {
+    5: "Aplicó estrategias excelentes y me ayudó a superar todas mis dificultades.",
+    4: "Aplicó buenas estrategias y me ayudó a superar algunas dificultades.",
+    3: "Aplicó algunas estrategias, pero no siempre resultaron efectivas.",
+    2: "Aplicó estrategias mínimas o ineficaces.",
+    1: "No aplicó ninguna estrategia de rescate."
   },
-  9:{
-    5:"Muy alta satisfacción con el acompañamiento de mi tutor(a).",
-    4:"Alta satisfacción con el acompañamiento de mi tutor(a).",
-    3:"Satisfacción regular con el acompañamiento de mi tutor(a).",
-    2:"Baja satisfacción con el acompañamiento de mi tutor(a).",
-    1:"Muy baja satisfacción con el acompañamiento de mi tutor(a)."
+  9: {
+    5: "Muy alta satisfacción con el acompañamiento de mi tutor(a).",
+    4: "Alta satisfacción con el acompañamiento de mi tutor(a).",
+    3: "Satisfacción regular con el acompañamiento de mi tutor(a).",
+    2: "Baja satisfacción con el acompañamiento de mi tutor(a).",
+    1: "Muy baja satisfacción con el acompañamiento de mi tutor(a)."
   },
 };
 
@@ -157,7 +156,6 @@ export async function getEvaluacionesAlumnoAPI(numControl) {
     return data;
   } catch (error) {
     console.error('❌ Error en getEvaluacionesAlumnoAPI:', error);
-    // En lugar de return vacío, lanzamos error para manejarlo en el componente
     throw error;
   }
 }
@@ -241,8 +239,43 @@ export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
   }
 }
 
+/**
+ * Guardar comentario del alumno sobre el docente
+ * POST /api/evaluacion/comentario
+ */
+export async function guardarComentarioAPI(
+  idEvaluacion,
+  numControl,
+  idDocente,
+  comentario
+) {
+  try {
+    const response = await fetch(`${API_URL}/api/evaluacion/comentario`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        idEvaluacion,
+        numControl,
+        idDocente,
+        comentario: comentario.trim(),
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Error al guardar el comentario');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('❌ Error en guardarComentarioAPI:', error);
+    throw error;
+  }
+}
+
 // ============================================================
-//  FUNCIONES PARA ADMIN / DASHBOARD (CORREGIDAS + NUEVAS)
+//  FUNCIONES PARA ADMIN / DASHBOARD
 // ============================================================
 
 /**
@@ -274,7 +307,7 @@ export async function getDocentesAPI() {
     return data.docentes || [];
   } catch (error) {
     console.error('❌ Error en getDocentesAPI:', error);
-    throw error; // Lanzamos el error para manejarlo en el componente
+    throw error;
   }
 }
 
@@ -307,12 +340,12 @@ export async function getPeriodosAPI() {
     return data.periodos || [];
   } catch (error) {
     console.error('❌ Error en getPeriodosAPI:', error);
-    throw error; // Lanzamos el error para manejarlo en el componente
+    throw error;
   }
 }
 
 /**
- * NUEVO: Obtener grupos de un docente en un período
+ * Obtener grupos de un docente en un período
  * GET /api/dashboard/docentes/:idDocente/periodos/:idPeriodo/grupos
  */
 export async function getGruposAPI(idDocente, idPeriodo) {
@@ -356,7 +389,6 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo, idGrupo) {
       throw new Error('No hay token de autenticación');
     }
 
-    // Construir URL con parámetros
     let url = `${API_URL}/api/dashboard/resultados?idDocente=${idDocente}&idPeriodo=${idPeriodo}`;
     if (idGrupo) {
       url += `&idGrupo=${idGrupo}`;
@@ -376,7 +408,6 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo, idGrupo) {
     const data = await response.json();
     console.log('✅ Resultados cargados:', data);
     
-    // Procesar respuesta para incluir información de grupo en alumnos
     return {
       ...data,
       completaron: (data.completaron || []).map(a => ({
@@ -424,55 +455,16 @@ export async function getPeriodoActivoAPI() {
   }
 }
 
-
- * Guardar comentario de la evaluación
- */
- 
-/**
- * Guardar comentario del alumno sobre el docente
- * POST /api/evaluacion/comentario
- */
-export async function guardarComentarioAPI(
-  idEvaluacion,
-  numControl,
-  idDocente,
-  comentario
-) {
-  try {
-    const response = await fetch(`${API_URL}/api/evaluacion/comentario`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({
-        idEvaluacion,
-        numControl,
-        idDocente,
-        comentario: comentario.trim(),
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Error al guardar el comentario');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('❌ Error en guardarComentarioAPI:', error);
-    throw error;
-  }
-}
-
 // ============================================================
-//  EXPORTS
+//  EXPORTS PARA COMPATIBILIDAD
 // ============================================================
 
-// Exportar funciones reales (descomentar para usar API)
 export const getPerfilAlumno = getPerfilAlumnoAPI;
 export const getEvaluacionesAlumno = getEvaluacionesAlumnoAPI;
 export const getPreguntas = getPreguntasAPI;
 export const iniciarEvaluacion = iniciarEvaluacionAPI;
 export const guardarRespuestas = guardarRespuestasAPI;
+export const guardarComentario = guardarComentarioAPI;
 export const getDocentes = getDocentesAPI;
 export const getPeriodos = getPeriodosAPI;
 export const getGrupos = getGruposAPI;

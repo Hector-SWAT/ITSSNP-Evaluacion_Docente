@@ -1,11 +1,12 @@
 /**
- * Evaluacion.jsx — VERSIÓN CON COMENTARIOS
+ * Evaluacion.jsx — VERSIÓN CON COMENTARIOS Y CARRERA
  * 
  * Cambios realizados:
  * 1. ✅ Nuevo estado "comentario" en la máquina de estados
  * 2. ✅ Muestra formulario de comentarios después de responder todas las preguntas
- * 3. ✅ Integra sp_guardar_comentario para guardar el feedback
- * 4. ✅ Mantiene toda la lógica de UI y experiencia anterior
+ * 3. ✅ Integra guardarComentarioAPI para guardar el feedback
+ * 4. ✅ NUEVO: Obtiene y pasa la carrera del alumno a /gracias
+ * 5. ✅ Mantiene toda la lógica de UI y experiencia anterior
  */
 
 import { useState, useEffect, useRef } from "react"
@@ -17,6 +18,7 @@ import {
   iniciarEvaluacionAPI,
   guardarRespuestasAPI,
   guardarComentarioAPI,
+  getPerfilAlumnoAPI,
   CATEGORIAS,
   RUBRICA,
 } from "../services/evaluacionData"
@@ -71,6 +73,7 @@ export default function Evaluacion() {
   const [preguntas, setPreguntas] = useState([])
   const [idEncuesta, setIdEncuesta] = useState(null)
   const [idEvaluacion, setIdEvaluacion] = useState(null)
+  const [alumnoInfo, setAlumnoInfo] = useState(null)
   const [cargandoInicial, setCargandoInicial] = useState(true)
   const [errorInicial, setErrorInicial] = useState("")
 
@@ -100,14 +103,20 @@ export default function Evaluacion() {
   useEffect(() => { paginaRef.current     = pagina    }, [pagina])
   useEffect(() => { respuestasRef.current = respuestas }, [respuestas])
 
-  /* ── Cargar preguntas desde la API al montar ── */
+  /* ── Cargar preguntas y datos del alumno desde la API al montar ── */
   useEffect(() => {
-    const cargarPreguntas = async () => {
+    const cargarDatos = async () => {
       try {
         setCargandoInicial(true)
-        const data = await getPreguntasAPI()
-        setPreguntas(data.preguntas || [])
-        setIdEncuesta(data.idEncuesta)
+        
+        // Cargar preguntas
+        const dataPreguntas = await getPreguntasAPI()
+        setPreguntas(dataPreguntas.preguntas || [])
+        setIdEncuesta(dataPreguntas.idEncuesta)
+
+        // Cargar datos del alumno (nombre, carrera, etc)
+        const datosAlumno = await getPerfilAlumnoAPI(numControl)
+        setAlumnoInfo(datosAlumno)
 
         // Iniciar evaluación
         const inicio = await iniciarEvaluacionAPI(numControl, tutor.id, idGrupoReal)
@@ -122,7 +131,7 @@ export default function Evaluacion() {
     }
 
     if (tutor.id && numControl && idGrupoReal) {
-      cargarPreguntas()
+      cargarDatos()
     }
 
     return () => {
@@ -176,7 +185,11 @@ export default function Evaluacion() {
           if (resultado.success) {
             navigate("/gracias", { 
               replace: true, 
-              state: { tutor, totalPreguntas: preguntas.length } 
+              state: { 
+                tutor, 
+                totalPreguntas: preguntas.length,
+                carrera: alumnoInfo?.carrera || "Carrera"
+              } 
             })
           } else {
             console.error("Error al guardar:", resultado.error)
@@ -188,7 +201,7 @@ export default function Evaluacion() {
         }
       }, 1100)
     }
-  }, [fase, idEvaluacion, navigate, preguntas.length, tutor])
+  }, [fase, idEvaluacion, navigate, preguntas.length, tutor, alumnoInfo])
 
   /* ── Derivados del render actual ── */
   const pregActual   = preguntas[pagina]
@@ -257,7 +270,11 @@ export default function Evaluacion() {
       if (resultado.success) {
         navigate("/gracias", {
           replace: true,
-          state: { tutor, totalPreguntas: preguntas.length }
+          state: { 
+            tutor, 
+            totalPreguntas: preguntas.length,
+            carrera: alumnoInfo?.carrera || "Carrera"
+          }
         })
       } else {
         setErrorComentario(resultado.error || "Error al guardar la evaluación")

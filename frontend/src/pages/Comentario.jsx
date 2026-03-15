@@ -1,9 +1,11 @@
 /**
- * Comentario.jsx — Formulario de comentarios finales
+ * Comentario.jsx — Formulario de comentarios OBLIGATORIOS
  * 
- * Aparece después de completar todas las preguntas
- * El alumno puede dejar un comentario sobre el docente evaluado
- * Máximo 1000 caracteres
+ * Cambios:
+ * - Comentarios OBLIGATORIOS (mínimo 10 caracteres)
+ * - Sin botón "Saltar comentario"
+ * - Solo botón "Finalizar evaluación"
+ * - Validación en tiempo real
  */
 
 import { useState } from "react"
@@ -19,8 +21,9 @@ export default function Comentario({
 
   const caracteres = comentario.length
   const maximo = 1000
+  const minimo = 10
   const porcentaje = (caracteres / maximo) * 100
-  const esValido = caracteres >= 10 && caracteres <= maximo
+  const esValido = caracteres >= minimo && caracteres <= maximo
 
   // Mostrar animación solo la primera vez
   if (!haMostrado) {
@@ -119,7 +122,7 @@ export default function Comentario({
         .com-label-sub {
           font-size: 12px;
           font-weight: 500;
-          color: #64748b;
+          color: #ef4444;
           margin-top: 2px;
         }
 
@@ -130,7 +133,7 @@ export default function Comentario({
 
         .com-textarea {
           width: 100%;
-          min-height: 140px;
+          min-height: 160px;
           padding: 14px 16px;
           border: 2px solid #e8edf5;
           border-radius: 12px;
@@ -210,22 +213,22 @@ export default function Comentario({
         }
 
         .com-hints {
-          background: #f0fdf4;
-          border: 1px solid #86efac;
+          background: #fef2f2;
+          border: 1px solid #fca5a5;
           border-radius: 10px;
           padding: 12px 14px;
           margin-bottom: 16px;
           font-size: 13px;
-          color: #15803d;
+          color: #b91c1c;
           display: flex;
           gap: 8px;
           align-items: flex-start;
         }
 
-        .com-hints.error {
-          background: #fef2f2;
-          border-color: #fca5a5;
-          color: #b91c1c;
+        .com-hints.valid {
+          background: #f0fdf4;
+          border-color: #86efac;
+          color: #15803d;
         }
 
         .com-hints-icon {
@@ -282,21 +285,6 @@ export default function Comentario({
           cursor: not-allowed;
         }
 
-        .com-btn-secondary {
-          background: #f1f5f9;
-          color: #475569;
-          border: 1px solid #cbd5e1;
-        }
-
-        .com-btn-secondary:hover:not(:disabled) {
-          background: #e2e8f0;
-        }
-
-        .com-btn-secondary:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
         .com-spinner {
           display: inline-block;
           width: 16px;
@@ -327,6 +315,23 @@ export default function Comentario({
           margin-top: 1px;
         }
 
+        .com-required {
+          color: #ef4444;
+          font-weight: 700;
+        }
+
+        .com-note {
+          margin-top: 16px;
+          padding: 12px;
+          background: #f0f9ff;
+          border: 1px solid #bae6fd;
+          border-radius: 8px;
+          font-size: 12px;
+          color: #0369a1;
+          font-weight: 500;
+          line-height: 1.6;
+        }
+
         @keyframes _spin {
           to {
             transform: rotate(360deg);
@@ -339,7 +344,7 @@ export default function Comentario({
           }
 
           .com-textarea {
-            min-height: 120px;
+            min-height: 140px;
           }
 
           .com-actions {
@@ -357,8 +362,8 @@ export default function Comentario({
         <div className="com-header">
           <div className="com-av">{inicial}</div>
           <div className="com-info">
-            <h3>¡Gracias por evaluar!</h3>
-            <p>Ahora cuéntanos tu experiencia con {tutor.nombre}</p>
+            <h3>¡Última etapa de la evaluación!</h3>
+            <p>Tu comentario es muy importante para {tutor.nombre}</p>
           </div>
         </div>
 
@@ -367,7 +372,7 @@ export default function Comentario({
           <label className="com-label">
             Comentarios sobre el docente
             <span className="com-label-sub">
-              Tu opinión es valiosa para mejorar la calidad educativa (opcional)
+              <span className="com-required">* Obligatorio</span> — Mínimo 10 caracteres
             </span>
           </label>
 
@@ -375,7 +380,7 @@ export default function Comentario({
           <div className="com-textarea-wrapper">
             <textarea
               className="com-textarea"
-              placeholder="Comparte tu experiencia, sugerencias o comentarios positivos sobre cómo fue tu clase con este docente. Sé respetuoso y constructivo..."
+              placeholder="Comparte tu experiencia, sugerencias o comentarios constructivos sobre cómo fue tu clase con este docente. Sé respetuoso y detallado..."
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
               disabled={cargando}
@@ -418,59 +423,70 @@ export default function Comentario({
             </div>
           )}
 
-          {/* Hints */}
+          {/* Hints dinámicos */}
           {comentario.length === 0 && (
             <div className="com-hints">
-              <span className="com-hints-icon">ℹ️</span>
+              <span className="com-hints-icon">✏️</span>
               <span className="com-hints-text">
-                El comentario es opcional. Puedes dejar tu evaluación en blanco si lo deseas.
+                Este campo es <span style={{ fontWeight: 700 }}>obligatorio</span>. 
+                Por favor escribe tus comentarios sobre el docente evaluado.
               </span>
             </div>
           )}
 
-          {comentario.length > 0 && comentario.length < 10 && (
+          {comentario.length > 0 && comentario.length < minimo && (
             <div className="com-hints">
-              <span className="com-hints-icon">✏️</span>
+              <span className="com-hints-icon">⚠️</span>
               <span className="com-hints-text">
-                Necesitas al menos 10 caracteres para enviar el comentario.
+                Necesitas al menos {minimo} caracteres. 
+                Faltan {minimo - comentario.length} caracteres.
+              </span>
+            </div>
+          )}
+
+          {esValido && (
+            <div className="com-hints valid">
+              <span className="com-hints-icon">✅</span>
+              <span className="com-hints-text">
+                Tu comentario está listo para ser enviado.
               </span>
             </div>
           )}
 
           {caracteres > maximo * 0.9 && (
-            <div className="com-hints error">
+            <div className="com-hints">
               <span className="com-hints-icon">⚠️</span>
               <span className="com-hints-text">
-                Estás cerca del límite de caracteres.
+                Estás cerca del límite de caracteres ({maximo} máximo).
               </span>
             </div>
           )}
 
-          {/* Botones */}
+          {/* Botón único: Finalizar */}
           <div className="com-actions">
-            <button
-              className="com-btn com-btn-secondary"
-              onClick={() => onEnviar("")}
-              disabled={cargando}
-            >
-              Saltar comentario
-            </button>
             <button
               className="com-btn com-btn-primary"
               onClick={handleEnviar}
               disabled={!esValido || cargando}
+              title={!esValido ? "Completa el comentario para continuar" : ""}
             >
               {cargando ? (
                 <>
                   <div className="com-spinner" />
-                  Enviando...
+                  Finalizando...
                 </>
               ) : (
                 <>
-                  ✓ Enviar comentario
+                  ✓ Finalizar Evaluación
                 </>
               )}
             </button>
+          </div>
+
+          {/* Nota adicional */}
+          <div className="com-note">
+            📌 Al finalizar, tu evaluación se completará y serás redirigido a tu panel de control 
+            donde podrás evaluar a otros docentes.
           </div>
         </div>
       </div>

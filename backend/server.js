@@ -606,7 +606,8 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
       const [docentesDepto] = await pool.query(`
         SELECT DISTINCT
           d.id_doce AS id,
-          CONCAT(d.grado, ' ', d.nombre, ' ', d.apellidos) AS nombre
+          CONCAT(d.grado, ' ', d.nombre, ' ', d.apellidos) AS nombre,
+          d.apellidos AS _sort
         FROM docente d
         INNER JOIN grupo g ON g.id_doce = d.id_doce AND g.id_perio = ?
         WHERE d.id_depa = ? AND d.vigente = 1

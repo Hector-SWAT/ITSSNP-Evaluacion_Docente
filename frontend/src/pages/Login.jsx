@@ -318,7 +318,7 @@ export default function Login() {
                   <input
                     className="lp-input"
                     type="text"
-                    placeholder="Ej: 22100067 o admin"
+                    placeholder="Ej: 22120015, 22100058"
                     value={usuario}
                     onChange={e => { setUsuario(e.target.value); setError("") }}
                     autoComplete="username"

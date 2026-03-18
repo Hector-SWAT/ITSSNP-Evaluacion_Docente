@@ -363,6 +363,83 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
+   EVALUACIÓN — POST /api/evaluacion/comentario  ← NUEVO
+   Body: { idEvaluacion, numControl, idDocente, comentario }
+   Guarda el comentario del alumno en comentario_evaluacion
+══════════════════════════════════════════════════════════════ */
+app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+
+  const { idEvaluacion, numControl, idDocente, comentario } = req.body
+
+  if (!idEvaluacion || !idDocente || !comentario) {
+    return res.status(400).json({ error: "idEvaluacion, idDocente y comentario son requeridos." })
+  }
+
+  const texto = String(comentario).trim()
+
+  if (texto.length < 10) {
+    return res.status(400).json({ error: "El comentario debe tener al menos 10 caracteres." })
+  }
+
+  if (texto.length > 1000) {
+    return res.status(400).json({ error: "El comentario no puede superar los 1000 caracteres." })
+  }
+
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+
+    // Verificar que la evaluación existe y pertenece al alumno autenticado
+    const [[evaluacion]] = await conn.query(
+      `SELECT id_evaluacion, num_control, id_doce, estado
+       FROM evaluacion_docente
+       WHERE id_evaluacion = ? LIMIT 1`,
+      [idEvaluacion]
+    )
+
+    if (!evaluacion) {
+      await conn.rollback()
+      return res.status(404).json({ error: "Evaluación no encontrada." })
+    }
+
+    if (evaluacion.num_control !== req.user.id) {
+      await conn.rollback()
+      return res.status(403).json({ error: "No tienes permiso para comentar esta evaluación." })
+    }
+
+    if (evaluacion.estado !== 3) {
+      await conn.rollback()
+      return res.status(400).json({ error: "Solo se pueden comentar evaluaciones completadas." })
+    }
+
+    // Insertar o actualizar comentario
+    await conn.query(
+      `INSERT INTO comentario_evaluacion
+         (id_evaluacion, num_control, id_doce, comentario, fecha_creacion, visible)
+       VALUES (?, ?, ?, ?, NOW(), 1)
+       ON DUPLICATE KEY UPDATE
+         comentario     = VALUES(comentario),
+         fecha_creacion = NOW(),
+         visible        = 1`,
+      [idEvaluacion, req.user.id, idDocente, texto]
+    )
+
+    await conn.commit()
+    return res.json({ success: true, mensaje: "Comentario guardado correctamente." })
+
+  } catch (err) {
+    await conn.rollback()
+    console.error("❌ Error en POST /api/evaluacion/comentario:", err)
+    return res.status(500).json({ error: "Error interno: " + err.message })
+  } finally {
+    conn.release()
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
    DASHBOARD — GET /api/dashboard/docentes
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) => {
@@ -418,6 +495,56 @@ app.get("/api/dashboard/docentes/:idDocente/periodos/:idPeriodo/grupos", authMid
 })
 
 /* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/docentes/:idDocente/comentarios  ← NUEVO
+   Query params: ?idPeriodo=X
+   Retorna comentarios visibles del docente en ese periodo
+══════════════════════════════════════════════════════════════ */
+app.get("/api/dashboard/docentes/:idDocente/comentarios", authMiddleware, soloAdmin, async (req, res) => {
+  const { idDocente } = req.params
+  const { idPeriodo } = req.query
+
+  if (!idDocente || !idPeriodo) {
+    return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
+  }
+
+  const docenteId = parseInt(idDocente)
+  const periodoId = parseInt(idPeriodo)
+
+  if (isNaN(docenteId) || isNaN(periodoId)) {
+    return res.status(400).json({ error: "IDs inválidos." })
+  }
+
+  try {
+    const [comentarios] = await pool.query(`
+      SELECT
+        ce.id_comentario,
+        ce.comentario,
+        ce.fecha_creacion
+      FROM comentario_evaluacion ce
+      INNER JOIN evaluacion_docente ed
+        ON ed.id_evaluacion = ce.id_evaluacion
+      WHERE ce.id_doce   = ?
+        AND ed.id_perio  = ?
+        AND ce.visible   = 1
+        AND ce.comentario IS NOT NULL
+        AND TRIM(ce.comentario) != ''
+      ORDER BY ce.fecha_creacion DESC
+    `, [docenteId, periodoId])
+
+    return res.json({
+      idDocente: docenteId,
+      idPeriodo: periodoId,
+      total:      comentarios.length,
+      comentarios,
+    })
+
+  } catch (err) {
+    console.error("❌ Error en GET /api/dashboard/docentes/:id/comentarios:", err)
+    return res.status(500).json({ error: "Error interno: " + err.message })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
    DASHBOARD — GET /api/dashboard/resultados
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
@@ -443,7 +570,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, [periodoId]
     )
 
-    // 3. Promedios por categoría (filtrando por grupo si aplica)
+    // 3. Promedios por categoría
     const promediosCatQuery = grupoId ? `
       SELECT c.id_categoria, c.nombre,
              COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
@@ -470,7 +597,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
     const promediosCatParams = grupoId ? [docenteId, periodoId, grupoId] : [docenteId, periodoId]
     const [promediosCat] = await pool.query(promediosCatQuery, promediosCatParams)
 
-    // 4. Conteos (filtrando por grupo si aplica)
+    // 4. Conteos
     const grupoJoin = grupoId ? `AND g.id_grupo = ${grupoId}` : ""
     const [[counts]] = await pool.query(`
       SELECT
@@ -539,7 +666,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       : [docenteId, periodoId, docenteId, periodoId]
     const [faltantes] = await pool.query(faltantesQuery, faltantesParams)
 
-    // 7. Calcular promedio general y clasificación
+    // 7. Promedio general y clasificación
     const promediosMap = {}
     promediosCat.forEach(p => { promediosMap[p.id_categoria] = Number(p.promedio) })
     const valoresPromedio = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
@@ -569,13 +696,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
 })
 
 /* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/departamentos   ← NUEVO
-   Query params: ?idPeriodo=X
-   Responde con estadísticas agregadas por departamento:
-   - promedioGeneral del departamento
-   - docentesEvaluados vs totalDocentes
-   - participacionAlumnos (%)
-   - ranking de docentes del departamento
+   DASHBOARD — GET /api/dashboard/departamentos
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, res) => {
   const { idPeriodo } = req.query
@@ -585,7 +706,6 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
   if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido." })
 
   try {
-    // 1. Obtener todos los departamentos con docentes vigentes en ese periodo
     const [deptos] = await pool.query(`
       SELECT DISTINCT
         dep.id_depa,
@@ -598,11 +718,9 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
 
     if (!deptos.length) return res.json({ departamentos: [] })
 
-    // 2. Para cada departamento, calcular sus estadísticas
     const resultado = []
 
     for (const depto of deptos) {
-      // Docentes del depto que tienen grupos en el periodo
       const [docentesDepto] = await pool.query(`
         SELECT DISTINCT
           d.id_doce AS id,
@@ -619,7 +737,6 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
 
       const docenteIds = docentesDepto.map(d => d.id)
 
-      // Total de alumnos inscritos con algún docente del depto en este periodo
       const [[alumnosCounts]] = await pool.query(`
         SELECT
           COUNT(DISTINCT i.num_control) AS total_alumnos,
@@ -641,7 +758,6 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
         ? parseFloat(((alumnosCompletaron / totalAlumnos) * 100).toFixed(1))
         : 0
 
-      // Docentes que tienen al menos 1 evaluación completada
       const [[evCounts]] = await pool.query(`
         SELECT COUNT(DISTINCT id_doce) AS evaluados
         FROM evaluacion_docente
@@ -652,7 +768,6 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
 
       const docentesEvaluados = evCounts.evaluados ?? 0
 
-      // Promedio general del departamento (promedio de promedios por docente)
       const [promediosDocentes] = await pool.query(`
         SELECT
           e.id_doce,
@@ -676,9 +791,7 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
         : promedioGeneral > 0    ? "DEFICIENTE"
         : "SIN DATOS"
 
-      // Ranking de docentes con su promedio y participación individual
       const docentesConStats = await Promise.all(docentesDepto.map(async (doc) => {
-        // Promedio del docente
         const [[docProm]] = await pool.query(`
           SELECT COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
           FROM evaluacion_docente e
@@ -686,11 +799,10 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
           WHERE e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
         `, [doc.id, periodoId])
 
-        // Alumnos del docente en este periodo
         const [[docAlumnos]] = await pool.query(`
           SELECT
-            COUNT(DISTINCT i.num_control)                                             AS total,
-            COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END)             AS completaron
+            COUNT(DISTINCT i.num_control)                                         AS total,
+            COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END)         AS completaron
           FROM inscripcion i
           JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
           LEFT JOIN evaluacion_docente e ON e.num_control = i.num_control
@@ -707,29 +819,27 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
           : "SIN DATOS"
 
         return {
-          id:               doc.id,
-          nombre:           doc.nombre,
+          id:                 doc.id,
+          nombre:             doc.nombre,
           promedio,
-          clasificacion:    docClasif,
-          totalAlumnos:     docAlumnos.total ?? 0,
+          clasificacion:      docClasif,
+          totalAlumnos:       docAlumnos.total ?? 0,
           alumnosCompletaron: docAlumnos.completaron ?? 0,
         }
       }))
 
       resultado.push({
-        nombre:              depto.nombre_depa,
+        nombre:               depto.nombre_depa,
         totalDocentes,
         docentesEvaluados,
         promedioGeneral,
         participacionAlumnos: participacion,
         clasificacion,
-        docentes: docentesConStats,
+        docentes:             docentesConStats,
       })
     }
 
-    // Ordenar por promedio general descendente
     resultado.sort((a, b) => b.promedioGeneral - a.promedioGeneral)
-
     return res.json({ departamentos: resultado })
 
   } catch (err) {
@@ -750,12 +860,14 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🗄️  Base de datos: ${dbCfg.host}:${dbCfg.port} / ${dbCfg.database}`)
   console.log("=======================================")
   console.log("✅ Endpoints disponibles:")
-  console.log(`   📊 Health:               /health`)
-  console.log(`   🔧 DB Test:              /api/db-test`)
-  console.log(`   🔐 Login:                /api/auth/login`)
-  console.log(`   📋 Docentes:             /api/dashboard/docentes`)
-  console.log(`   📋 Periodos:             /api/dashboard/periodos`)
-  console.log(`   📋 Resultados docente:   /api/dashboard/resultados`)
-  console.log(`   🏢 Departamentos:        /api/dashboard/departamentos  ← NUEVO`)
+  console.log(`   📊 Health:                    /health`)
+  console.log(`   🔧 DB Test:                   /api/db-test`)
+  console.log(`   🔐 Login:                     /api/auth/login`)
+  console.log(`   💬 Guardar comentario:        POST /api/evaluacion/comentario  ← NUEVO`)
+  console.log(`   📋 Docentes:                  /api/dashboard/docentes`)
+  console.log(`   📋 Periodos:                  /api/dashboard/periodos`)
+  console.log(`   📋 Resultados docente:        /api/dashboard/resultados`)
+  console.log(`   🏢 Departamentos:             /api/dashboard/departamentos`)
+  console.log(`   💬 Comentarios por docente:   /api/dashboard/docentes/:id/comentarios  ← NUEVO`)
   console.log("=======================================")
 })

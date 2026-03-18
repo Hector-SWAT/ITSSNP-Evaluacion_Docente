@@ -410,11 +410,6 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "No tienes permiso para comentar esta evaluación." })
     }
 
-    if (evaluacion.estado !== 3) {
-      await conn.rollback()
-      return res.status(400).json({ error: "Solo se pueden comentar evaluaciones completadas." })
-    }
-
     // Insertar o actualizar comentario
     await conn.query(
       `INSERT INTO comentario_evaluacion

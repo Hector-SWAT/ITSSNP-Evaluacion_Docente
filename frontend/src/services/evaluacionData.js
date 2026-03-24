@@ -3,7 +3,21 @@
    VERSIÓN CONECTADA A AZURE SQL - CORREGIDA CON EXPORTS
    ================================================================ */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+//const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Detectar automáticamente la URL de la API
+const API_URL = import.meta.env.VITE_API_URL || 
+                (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '')
+
+// Si está en producción y no hay VITE_API_URL, usar la misma URL base
+const getApiUrl = () => {
+  if (API_URL) return API_URL
+  // En producción, usar la misma URL (porque backend y frontend están juntos)
+  return window.location.origin
+}
+
+const API_BASE = getApiUrl()
+
+console.log("📡 API Base URL:", API_BASE)
 
 // ============================================================
 //  FUNCIONES DE AUTENTICACIÓN Y TOKEN

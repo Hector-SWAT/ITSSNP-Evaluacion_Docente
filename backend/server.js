@@ -15,6 +15,18 @@ const cors = require("cors")
 const app = express()
 const PORT = process.env.PORT || 3001
 
+
+
+// Al inicio del archivo, después de require("dotenv").config()
+console.log("🔍 Variables de entorno cargadas:")
+console.log("   DB_HOST:", process.env.DB_HOST ? "✅" : "❌ NO DEFINIDA")
+console.log("   DB_USER:", process.env.DB_USER ? "✅" : "❌ NO DEFINIDA")
+console.log("   DB_PASSWORD:", process.env.DB_PASSWORD ? "✅" : "❌ NO DEFINIDA")
+console.log("   DB_NAME:", process.env.DB_NAME ? "✅" : "❌ NO DEFINIDA")
+console.log("   JWT_SECRET:", process.env.JWT_SECRET ? "✅" : "❌ NO DEFINIDA")
+console.log("   NODE_ENV:", process.env.NODE_ENV || "development")
+
+
 /* ══════════════════════════════════════════════════════════════
    CORS
 ══════════════════════════════════════════════════════════════ */

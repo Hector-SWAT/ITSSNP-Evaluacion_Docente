@@ -60,6 +60,49 @@ app.use((req, res, next) => {
 })
 app.use(express.json())
 
+
+
+// Endpoint de prueba para verificar que el backend funciona
+app.get("/api/ping", (req, res) => {
+  console.log("🏓 Ping recibido en Vercel")
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    message: "API funcionando correctamente",
+    env: process.env.NODE_ENV
+  })
+})
+
+app.get("/api/health", async (req, res) => {
+  try {
+    let dbStatus = "disconnected"
+    let dbError = null
+    try {
+      await getConnection()
+      dbStatus = "connected"
+    } catch (err) {
+      dbError = err.message
+    }
+    
+    res.json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+      dbError: dbError,
+      environment: process.env.NODE_ENV,
+      envVars: {
+        DB_HOST: !!process.env.DB_HOST,
+        DB_USER: !!process.env.DB_USER,
+        DB_PASSWORD: !!process.env.DB_PASSWORD,
+        DB_NAME: !!process.env.DB_NAME,
+        JWT_SECRET: !!process.env.JWT_SECRET
+      }
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", error: err.message })
+  }
+})
+
 /* ══════════════════════════════════════════════════════════════
    AZURE SQL — CONFIGURACIÓN
 ══════════════════════════════════════════════════════════════ */

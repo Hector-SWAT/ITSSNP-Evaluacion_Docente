@@ -9,8 +9,5 @@
       "source": "/(.*)",
       "destination": "/frontend/dist/index.html"
     }
-  ],
-  "buildCommand": "cd frontend && npm install && npx --yes vite build",
-  "outputDirectory": "frontend/dist",
-  "installCommand": "cd backend && npm install"
+  ]
 }

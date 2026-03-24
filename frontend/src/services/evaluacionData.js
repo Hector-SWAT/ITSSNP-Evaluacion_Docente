@@ -8,16 +8,21 @@
 const API_URL = import.meta.env.VITE_API_URL || 
                 (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '')
 
-// Si está en producción y no hay VITE_API_URL, usar la misma URL base
+// Detectar automáticamente la URL de la API
 const getApiUrl = () => {
-  if (API_URL) return API_URL
-  // En producción, usar la misma URL (porque backend y frontend están juntos)
+  // En desarrollo local
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3001'
+  }
+  
+  // En producción (Vercel), backend y frontend están juntos
+  // Las peticiones a /api van al mismo dominio
   return window.location.origin
 }
 
-const API_BASE = getApiUrl()
+const API_URL = getApiUrl()
 
-console.log("📡 API Base URL:", API_BASE)
+console.log("📡 API Base URL:", API_URL)
 
 // ============================================================
 //  FUNCIONES DE AUTENTICACIÓN Y TOKEN

@@ -1,6 +1,6 @@
 /* ================================================================
    evaluacionData.js  →  src/services/evaluacionData.js
-   VERSIÓN DEFINITIVA - SOLO UNA DEFINICIÓN DE API_URL
+   VERSIÓN COMPLETA CON TODAS LAS FUNCIONES - CORREGIDA
    ================================================================ */
 
 // ============================================================
@@ -12,9 +12,7 @@ const API_URL = (() => {
   if (import.meta.env.DEV) {
     return 'http://localhost:3001'
   }
-  
-  // En producción (Vercel)
-  // Las peticiones a /api van al mismo dominio
+  // En producción (Vercel), backend y frontend están juntos
   return window.location.origin
 })()
 
@@ -25,13 +23,12 @@ console.log("📡 API Base URL:", API_URL)
 // ============================================================
 
 function getToken() {
-  return localStorage.getItem('token') || localStorage.getItem('sicot_token')
+  return localStorage.getItem('token')
 }
 
 function getHeaders() {
-  const token = getToken()
   return {
-    'Authorization': token ? `Bearer ${token}` : '',
+    'Authorization': `Bearer ${getToken()}`,
     'Content-Type': 'application/json'
   }
 }
@@ -126,7 +123,7 @@ export const ESCALA_LABELS_FALLBACK = {
   1: "Deficiente" 
 }
 
-// Exportar como CATEGORIAS, RUBRICA, ESCALA_LABELS para compatibilidad
+// Exportar como CATEGORIAS, RUBRICA, ESCALA_LABELS para compatibilidad con componentes existentes
 export const CATEGORIAS = CATEGORIAS_FALLBACK
 export const RUBRICA = RUBRICA_FALLBACK
 export const ESCALA_LABELS = ESCALA_LABELS_FALLBACK
@@ -141,46 +138,77 @@ let escalaCache = null
 // ============================================================
 
 export async function getCategoriasAPI(forceRefresh = false) {
-  if (!forceRefresh && categoriasCache) return categoriasCache
+  if (!forceRefresh && categoriasCache) {
+    return categoriasCache
+  }
   
   try {
-    const response = await fetch(`${API_URL}/api/encuesta/categorias`, { headers: getHeaders() })
-    if (!response.ok) throw new Error('Error al obtener categorías')
+    const response = await fetch(`${API_URL}/api/encuesta/categorias`, {
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      throw new Error('Error al obtener categorías')
+    }
+    
     const data = await response.json()
     categoriasCache = data.categorias || []
     return categoriasCache
   } catch (error) {
     console.error('❌ Error en getCategoriasAPI:', error)
+    console.warn('⚠️ Usando categorías de fallback')
     return CATEGORIAS_FALLBACK
   }
 }
 
 export async function getRubricaAPI(forceRefresh = false) {
-  if (!forceRefresh && rubricaCache) return rubricaCache
+  if (!forceRefresh && rubricaCache) {
+    return rubricaCache
+  }
   
   try {
-    const response = await fetch(`${API_URL}/api/encuesta/rubrica`, { headers: getHeaders() })
-    if (!response.ok) throw new Error('Error al obtener rúbrica')
+    const response = await fetch(`${API_URL}/api/encuesta/rubrica`, {
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      throw new Error('Error al obtener rúbrica')
+    }
+    
     const data = await response.json()
+    
+    // Convertir array a objeto anidado
     const rubricaObj = {}
     ;(data.rubrica || []).forEach(item => {
-      if (!rubricaObj[item.idCategoria]) rubricaObj[item.idCategoria] = {}
+      if (!rubricaObj[item.idCategoria]) {
+        rubricaObj[item.idCategoria] = {}
+      }
       rubricaObj[item.idCategoria][item.Valor] = item.Descripcion
     })
+    
     rubricaCache = rubricaObj
     return rubricaCache
   } catch (error) {
     console.error('❌ Error en getRubricaAPI:', error)
+    console.warn('⚠️ Usando rúbrica de fallback')
     return RUBRICA_FALLBACK
   }
 }
 
 export async function getEscalaAPI(forceRefresh = false) {
-  if (!forceRefresh && escalaCache) return escalaCache
+  if (!forceRefresh && escalaCache) {
+    return escalaCache
+  }
   
   try {
-    const response = await fetch(`${API_URL}/api/encuesta/escala`, { headers: getHeaders() })
-    if (!response.ok) throw new Error('Error al obtener escala')
+    const response = await fetch(`${API_URL}/api/encuesta/escala`, {
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      throw new Error('Error al obtener escala')
+    }
+    
     const data = await response.json()
     escalaCache = data.escala || ESCALA_LABELS_FALLBACK
     return escalaCache
@@ -196,26 +224,55 @@ export async function getEscalaAPI(forceRefresh = false) {
 
 export async function getPerfilAlumnoAPI() {
   try {
-    const response = await fetch(`${API_URL}/api/alumno/perfil`, { headers: getHeaders() })
+    const response = await fetch(`${API_URL}/api/alumno/perfil`, {
+      headers: getHeaders()
+    })
+    
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.error || 'Error al obtener perfil')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en getPerfilAlumnoAPI:', error)
     throw error
   }
 }
 
+export async function getCargaAcademicaAPI() {
+  try {
+    const response = await fetch(`${API_URL}/api/alumno/carga-academica`, {
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Error al obtener carga académica')
+    }
+    
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error('❌ Error en getCargaAcademicaAPI:', error)
+    throw error
+  }
+}
+
 export async function getEvaluacionesAlumnoAPI() {
   try {
-    const response = await fetch(`${API_URL}/api/alumno/evaluaciones`, { headers: getHeaders() })
+    const response = await fetch(`${API_URL}/api/alumno/evaluaciones`, {
+      headers: getHeaders()
+    })
+    
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.error || 'Error al obtener evaluaciones')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en getEvaluacionesAlumnoAPI:', error)
     throw error
@@ -224,12 +281,17 @@ export async function getEvaluacionesAlumnoAPI() {
 
 export async function getPreguntasAPI() {
   try {
-    const response = await fetch(`${API_URL}/api/encuesta/preguntas`, { headers: getHeaders() })
+    const response = await fetch(`${API_URL}/api/encuesta/preguntas`, {
+      headers: getHeaders()
+    })
+    
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.error || 'Error al obtener preguntas')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en getPreguntasAPI:', error)
     throw error
@@ -239,13 +301,22 @@ export async function getPreguntasAPI() {
 export async function iniciarEvaluacionAPI(idTutor, idGrupo) {
   try {
     console.log("🚀 Iniciando evaluación con tutor:", idTutor, "grupo:", idGrupo)
+    
     const response = await fetch(`${API_URL}/api/evaluacion/iniciar`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ idTutor, idGrupo })
+      body: JSON.stringify({
+        idTutor,
+        idGrupo
+      })
     })
+    
     const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Error al iniciar evaluación')
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Error al iniciar evaluación')
+    }
+    
     return data
   } catch (error) {
     console.error('❌ Error en iniciarEvaluacionAPI:', error)
@@ -256,14 +327,23 @@ export async function iniciarEvaluacionAPI(idTutor, idGrupo) {
 export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
   try {
     console.log("💾 Guardando respuestas:", { idEvaluacion, respuestas: respuestas?.length })
+    
     const response = await fetch(`${API_URL}/api/evaluacion/responder`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ idEvaluacion, respuestas })
+      body: JSON.stringify({
+        idEvaluacion,
+        respuestas
+      })
     })
+    
     const data = await response.json()
     console.log("📡 Respuesta del servidor:", data)
-    if (!response.ok) throw new Error(data.error || 'Error al guardar respuestas')
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Error al guardar respuestas')
+    }
+    
     return data
   } catch (error) {
     console.error('❌ Error en guardarRespuestasAPI:', error)
@@ -273,19 +353,39 @@ export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
 
 export async function guardarComentarioAPI(idEvaluacion, idDocente, comentario) {
   try {
+    // Asegurar que comentario sea string y limpiarlo
     const texto = String(comentario).trim()
+    
     console.log("💬 Guardando comentario:", { idEvaluacion, idDocente, texto })
-    if (!texto) throw new Error('El comentario no puede estar vacío')
-    if (texto.length < 10) throw new Error('El comentario debe tener al menos 10 caracteres.')
-    if (texto.length > 1000) throw new Error('El comentario no puede superar los 1000 caracteres.')
+    
+    if (!texto) {
+      throw new Error('El comentario no puede estar vacío')
+    }
+    
+    if (texto.length < 10) {
+      throw new Error('El comentario debe tener al menos 10 caracteres.')
+    }
+    
+    if (texto.length > 1000) {
+      throw new Error('El comentario no puede superar los 1000 caracteres.')
+    }
     
     const response = await fetch(`${API_URL}/api/evaluacion/comentario`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ idEvaluacion, idDocente, comentario: texto })
+      body: JSON.stringify({
+        idEvaluacion,
+        idDocente,
+        comentario: texto
+      })
     })
+    
     const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Error al guardar el comentario')
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Error al guardar el comentario')
+    }
+    
     console.log("✅ Comentario guardado correctamente:", data)
     return data
   } catch (error) {
@@ -301,14 +401,25 @@ export async function guardarComentarioAPI(idEvaluacion, idDocente, comentario) 
 export async function getDocentesAPI() {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/docentes`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(`${API_URL}/api/dashboard/docentes`, {
+      headers: getHeaders()
+    })
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener docentes')
     }
+    
     const data = await response.json()
+    console.log('✅ Docentes cargados:', data.docentes?.length || 0)
     return data.docentes || []
   } catch (error) {
     console.error('❌ Error en getDocentesAPI:', error)
@@ -319,14 +430,25 @@ export async function getDocentesAPI() {
 export async function getPeriodosAPI() {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/periodos`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(`${API_URL}/api/dashboard/periodos`, {
+      headers: getHeaders()
+    })
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener periodos')
     }
+    
     const data = await response.json()
+    console.log('✅ Periodos cargados:', data.periodos?.length || 0)
     return data.periodos || []
   } catch (error) {
     console.error('❌ Error en getPeriodosAPI:', error)
@@ -337,14 +459,26 @@ export async function getPeriodosAPI() {
 export async function getGruposAPI(idDocente, idPeriodo) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/docentes/${idDocente}/periodos/${idPeriodo}/grupos`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(
+      `${API_URL}/api/dashboard/docentes/${idDocente}/periodos/${idPeriodo}/grupos`,
+      { headers: getHeaders() }
+    )
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener grupos')
     }
+    
     const data = await response.json()
+    console.log('✅ Grupos cargados:', data.grupos?.length || 0)
     return data.grupos || []
   } catch (error) {
     console.error('❌ Error en getGruposAPI:', error)
@@ -355,17 +489,40 @@ export async function getGruposAPI(idDocente, idPeriodo) {
 export async function getResultadosDocenteAPI(idDocente, idPeriodo, idGrupo = null) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
     let url = `${API_URL}/api/dashboard/resultados?idDocente=${idDocente}&idPeriodo=${idPeriodo}`
-    if (idGrupo) url += `&idGrupo=${idGrupo}`
+    if (idGrupo) {
+      url += `&idGrupo=${idGrupo}`
+    }
+
     const response = await fetch(url, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener resultados')
     }
+    
     const data = await response.json()
-    return data
+    console.log('✅ Resultados cargados para docente:', idDocente)
+    
+    return {
+      ...data,
+      completaron: (data.completaron || []).map(a => ({
+        ...a,
+        grupo: a.grupo || a.grupo_clave || "",
+      })),
+      faltantes: (data.faltantes || []).map(a => ({
+        ...a,
+        grupo: a.grupo || a.grupo_clave || "",
+      })),
+    }
   } catch (error) {
     console.error('❌ Error en getResultadosDocenteAPI:', error)
     throw error
@@ -375,14 +532,25 @@ export async function getResultadosDocenteAPI(idDocente, idPeriodo, idGrupo = nu
 export async function getDepartamentosAPI(idPeriodo) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/departamentos?idPeriodo=${idPeriodo}`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(`${API_URL}/api/dashboard/departamentos?idPeriodo=${idPeriodo}`, {
+      headers: getHeaders()
+    })
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener departamentos')
     }
+    
     const data = await response.json()
+    console.log('✅ Departamentos cargados:', data.departamentos?.length || 0)
     return data.departamentos || []
   } catch (error) {
     console.error('❌ Error en getDepartamentosAPI:', error)
@@ -393,14 +561,25 @@ export async function getDepartamentosAPI(idPeriodo) {
 export async function getComentariosDocenteAPI(idDocente, idPeriodo) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/docentes/${idDocente}/comentarios?idPeriodo=${idPeriodo}`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(`${API_URL}/api/dashboard/docentes/${idDocente}/comentarios?idPeriodo=${idPeriodo}`, {
+      headers: getHeaders()
+    })
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener comentarios')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en getComentariosDocenteAPI:', error)
     throw error
@@ -410,19 +589,34 @@ export async function getComentariosDocenteAPI(idDocente, idPeriodo) {
 export async function getAlumnosPorDocenteAPI(idDocente, idPeriodo) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
-    const response = await fetch(`${API_URL}/api/dashboard/docente/${idDocente}/alumnos?idPeriodo=${idPeriodo}`, { headers: getHeaders() })
-    if (response.status === 401) throw new Error('Sesión expirada')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
+    const response = await fetch(`${API_URL}/api/dashboard/docente/${idDocente}/alumnos?idPeriodo=${idPeriodo}`, {
+      headers: getHeaders()
+    })
+    
+    if (response.status === 401) {
+      throw new Error('Sesión expirada. Por favor inicia sesión nuevamente.')
+    }
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.error || 'Error al obtener alumnos')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en getAlumnosPorDocenteAPI:', error)
     throw error
   }
 }
+
+// ============================================================
+//  FUNCIONES DE UTILIDAD
+// ============================================================
 
 export async function yaEvaluadoAPI(idTutor) {
   try {
@@ -436,8 +630,14 @@ export async function yaEvaluadoAPI(idTutor) {
 
 export async function getPeriodoActivoAPI() {
   try {
-    const response = await fetch(`${API_URL}/api/dashboard/periodo-activo`, { headers: getHeaders() })
-    if (!response.ok) throw new Error('Error al obtener periodo activo')
+    const response = await fetch(`${API_URL}/api/dashboard/periodo-activo`, {
+      headers: getHeaders()
+    })
+    
+    if (!response.ok) {
+      throw new Error('Error al obtener periodo activo')
+    }
+    
     const data = await response.json()
     return data.existe ? data.periodo : null
   } catch (error) {
@@ -449,17 +649,23 @@ export async function getPeriodoActivoAPI() {
 export async function setPeriodoActivoAPI(idPeriodo) {
   try {
     const token = getToken()
-    if (!token) throw new Error('No hay token de autenticación')
+    if (!token) {
+      throw new Error('No hay token de autenticación')
+    }
+
     const response = await fetch(`${API_URL}/api/dashboard/periodo-activo`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ idPeriodo })
     })
+    
     if (!response.ok) {
       const error = await response.json()
       throw new Error(error.error || 'Error al cambiar periodo activo')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    return data
   } catch (error) {
     console.error('❌ Error en setPeriodoActivoAPI:', error)
     throw error
@@ -467,7 +673,7 @@ export async function setPeriodoActivoAPI(idPeriodo) {
 }
 
 // ============================================================
-//  EXPORTS PARA COMPATIBILIDAD
+//  EXPORTS PARA COMPATIBILIDAD CON COMPONENTES EXISTENTES
 // ============================================================
 
 export const getPerfilAlumno = getPerfilAlumnoAPI

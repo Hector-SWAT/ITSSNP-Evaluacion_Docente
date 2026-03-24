@@ -30,11 +30,22 @@ export default function Comentario({
     setHaMostrado(true)
   }
 
-  const handleEnviar = () => {
-    if (esValido) {
-      onEnviar(comentario)
-    }
+// Comentario.jsx - Parte relevante
+const handleEnviar = () => {
+  const textoComentario = String(comentario).trim()
+  
+  if (!textoComentario) {
+    alert('Por favor escribe un comentario antes de enviar')
+    return
   }
+  
+  if (textoComentario.length < 10) {
+    alert('El comentario debe tener al menos 10 caracteres')
+    return
+  }
+  
+  onEnviar(textoComentario) // Esto debe pasar un string, no un objeto
+}
 
   const inicial = tutor.nombre
     .replace(/^(Dr\.|Dra\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "")

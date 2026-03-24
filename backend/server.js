@@ -1,17 +1,18 @@
 /**
  * ================================================================
- *  SICOT — Backend API  (Railway-ready)
- *  Node.js + Express + MySQL2
+ *  SICOT — Backend API  (AZURE SQL)
+ *  Node.js + Express + MSSQL
+ *  Versión completa y funcional con todas las correcciones
  * ================================================================
  */
 require("dotenv").config()
 const express = require("express")
-const mysql   = require("mysql2/promise")
-const jwt     = require("jsonwebtoken")
-const crypto  = require("crypto")
-const cors    = require("cors")
+const sql = require("mssql")
+const jwt = require("jsonwebtoken")
+const crypto = require("crypto")
+const cors = require("cors")
 
-const app  = express()
+const app = express()
 const PORT = process.env.PORT || 3001
 
 /* ══════════════════════════════════════════════════════════════
@@ -42,107 +43,97 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'sin origen'}`)
+  console.log(`📡 ${req.method} ${req.path}`)
   next()
 })
 app.use(express.json())
 
 /* ══════════════════════════════════════════════════════════════
-   MYSQL — CONEXIÓN
+   AZURE SQL — CONFIGURACIÓN
 ══════════════════════════════════════════════════════════════ */
-function getDbConfig() {
-  console.log("🔍 Configurando conexión a MySQL...")
-  if (process.env.NODE_ENV === 'production') {
-    console.log("✅ MODO PRODUCCIÓN: Usando proxy público (trolley.proxy.rlwy.net:19348)")
-    return {
-      host: "trolley.proxy.rlwy.net",
-      port: 19348,
-      user: "root",
-      password: "cdFLRUidwslSicLWufGKskPbEraFPspX",
-      database: "railway",
-    }
+const dbConfig = {
+  user: process.env.DB_USER || "adminsql",
+  password: process.env.DB_PASSWORD || "Hector123*",
+  server: process.env.DB_HOST || "swat.database.windows.net",
+  database: process.env.DB_NAME || "SIE",
+  port: parseInt(process.env.DB_PORT) || 1433,
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+    enableArithAbort: true
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000
   }
-  if (process.env.DATABASE_URL) {
-    try {
-      const u = new URL(process.env.DATABASE_URL)
-      console.log("✅ MODO DESARROLLO: Usando DATABASE_URL")
-      return {
-        host: u.hostname,
-        port: Number(u.port) || 3306,
-        user: decodeURIComponent(u.username),
-        password: decodeURIComponent(u.password),
-        database: u.pathname.slice(1),
-      }
-    } catch (e) {
-      console.error("Error parsing DATABASE_URL:", e.message)
-    }
-  }
-  console.log("⚠️ Usando configuración por defecto (localhost)")
-  return { host: "localhost", port: 3306, user: "root", password: "", database: "railway" }
 }
 
-const dbCfg = getDbConfig()
-console.log("📊 Configuración MySQL:", { host: dbCfg.host, port: dbCfg.port, database: dbCfg.database, user: dbCfg.user, hasPassword: !!dbCfg.password })
+console.log("🔍 Configurando conexión a Azure SQL...")
+console.log(`📊 Servidor: ${dbConfig.server}:${dbConfig.port}`)
+console.log(`📊 Base de datos: ${dbConfig.database}`)
 
-const pool = mysql.createPool({
-  host: dbCfg.host,
-  port: dbCfg.port,
-  user: dbCfg.user,
-  password: dbCfg.password,
-  database: dbCfg.database,
-  waitForConnections: true,
-  connectionLimit: 5,
-  connectTimeout: 10000,
-  charset: "utf8mb4",
-  ssl: { rejectUnauthorized: false }
-})
+let pool = null
 
-;(async () => {
-  let retries = 5
-  while (retries > 0) {
-    try {
-      const conn = await pool.getConnection()
-      console.log("✅ ¡CONEXIÓN EXITOSA A MYSQL!")
-      conn.release()
-      break
-    } catch (err) {
-      retries--
-      console.error(`❌ Intento ${5-retries}/5 - Error MySQL:`, err.message)
-      if (retries === 0) {
-        console.error("⚠️ No se pudo conectar a MySQL después de 5 intentos")
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 3000))
-      }
+async function getConnection() {
+  try {
+    if (!pool) {
+      pool = await sql.connect(dbConfig)
+      console.log("✅ ¡CONEXIÓN EXITOSA A AZURE SQL!")
     }
+    return pool
+  } catch (err) {
+    console.error("❌ Error conectando a Azure SQL:", err.message)
+    throw err
   }
-})()
+}
+
+async function executeQuery(query, params = []) {
+  const connection = await getConnection()
+  try {
+    const request = connection.request()
+    params.forEach((param, index) => {
+      request.input(`p${index}`, param)
+    })
+    let formattedQuery = query
+    params.forEach((_, index) => {
+      formattedQuery = formattedQuery.replace('?', `@p${index}`)
+    })
+    const result = await request.query(formattedQuery)
+    return result.recordset
+  } catch (err) {
+    console.error("Error en executeQuery:", err)
+    throw err
+  }
+}
+
+async function executeQuerySingle(query, params = []) {
+  const rows = await executeQuery(query, params)
+  return rows.length > 0 ? rows[0] : null
+}
 
 /* ══════════════════════════════════════════════════════════════
    HEALTH CHECKS
 ══════════════════════════════════════════════════════════════ */
-app.get("/", (_req, res) => {
-  res.json({ app: "SICOT API", status: "ok", environment: process.env.NODE_ENV || 'development', db_host: dbCfg.host, db_port: dbCfg.port })
+app.get("/", async (_req, res) => {
+  try {
+    await getConnection()
+    res.json({ app: "SICOT API", status: "ok", environment: process.env.NODE_ENV || 'development' })
+  } catch (err) {
+    res.json({ app: "SICOT API", status: "error", error: err.message })
+  }
 })
 
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "healthy", timestamp: new Date().toISOString(), uptime: process.uptime() })
-})
-
-app.get("/health/detailed", async (_req, res) => {
-  try {
-    await pool.query('SELECT 1 as healthCheck')
-    res.json({ status: "ok", timestamp: new Date(), database: "connected", db_host: dbCfg.host, db_port: dbCfg.port, uptime: process.uptime() })
-  } catch (err) {
-    res.status(500).json({ status: "error", database: "disconnected", error: err.message })
-  }
+  res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() })
 })
 
 app.get("/api/db-test", async (req, res) => {
   try {
-    const [result] = await pool.query('SELECT NOW() as time, DATABASE() as db, USER() as user')
-    res.json({ success: true, message: "✅ Conexión a MySQL exitosa", connection: { host: dbCfg.host, port: dbCfg.port }, result: result[0] })
+    const result = await executeQuery("SELECT GETDATE() as time, DB_NAME() as db, SUSER_NAME() as [user]")
+    res.json({ success: true, message: "✅ Conexión exitosa", result: result[0] })
   } catch (err) {
-    res.status(500).json({ success: false, message: "❌ Error de conexión a MySQL", error: err.message })
+    res.status(500).json({ success: false, error: err.message })
   }
 })
 
@@ -153,7 +144,9 @@ const JWT_SECRET = process.env.JWT_SECRET || "sicot_itssnp_2026_secreto"
 
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization
-  if (!header || !header.startsWith("Bearer ")) return res.status(401).json({ error: "No autorizado" })
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "No autorizado" })
+  }
   const token = header.slice(7)
   try {
     req.user = jwt.verify(token, JWT_SECRET)
@@ -164,7 +157,9 @@ function authMiddleware(req, res, next) {
 }
 
 function soloAdmin(req, res, next) {
-  if (!req.user || req.user.tipo !== "admin") return res.status(403).json({ error: "Acceso denegado" })
+  if (!req.user || req.user.tipo !== "admin") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
   next()
 }
 
@@ -173,88 +168,382 @@ function soloAdmin(req, res, next) {
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
   const { usuario, password } = req.body
-  if (!usuario || !password) return res.status(400).json({ error: "Usuario y contraseña requeridos." })
-  const hashInput = crypto.createHash("sha256").update(password).digest("hex")
+  if (!usuario || !password) {
+    return res.status(400).json({ error: "Usuario y contraseña requeridos." })
+  }
+  
+  const hashInputSHA256 = crypto.createHash("sha256").update(password).digest("hex")
+  
   try {
-    const [[adminRow]] = await pool.query(
-      `SELECT id_admin, usuario, nombre, clave FROM usuario_admin WHERE usuario = ? AND activo = 1 LIMIT 1`,
+    const adminRow = await executeQuerySingle(
+      `SELECT IdAdmin AS id_admin, Usuario AS usuario, NombreCompleto AS nombre, Clave AS clave, Activo AS activo
+       FROM eval.UsuarioAdmin WHERE Usuario = ? AND Activo = 1`,
       [usuario.trim().toLowerCase()]
     )
+    
     if (adminRow) {
-      if (hashInput !== adminRow.clave) return res.status(401).json({ error: "Contraseña incorrecta." })
-      const token = jwt.sign({ tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre }, JWT_SECRET, { expiresIn: "8h" })
+      if (hashInputSHA256 !== adminRow.clave) {
+        return res.status(401).json({ error: "Contraseña incorrecta." })
+      }
+      const token = jwt.sign(
+        { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre }, 
+        JWT_SECRET, 
+        { expiresIn: "8h" }
+      )
       return res.json({ tipo_usuario: "admin", num_control: null, nombre_completo: adminRow.nombre, token })
     }
+    
     const numControl = Number(usuario.trim())
-    if (!numControl) return res.status(401).json({ error: "Usuario no encontrado." })
-    const [[alumno]] = await pool.query(
-      `SELECT num_control, nombre_completo, clave FROM alumno WHERE num_control = ? LIMIT 1`,
+    if (!numControl) {
+      return res.status(401).json({ error: "Usuario no encontrado." })
+    }
+    
+    const alumno = await executeQuerySingle(
+      `SELECT NumControl, NombreCompleto, Clave FROM dbo.Alumno WHERE NumControl = ?`,
       [numControl]
     )
-    if (!alumno) return res.status(401).json({ error: "Número de control no encontrado." })
-    if (hashInput !== alumno.clave) return res.status(401).json({ error: "Contraseña incorrecta." })
-    const [[periodo]] = await pool.query(`SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`)
-    const token = jwt.sign({ tipo: "alumno", id: alumno.num_control, nombre: alumno.nombre_completo }, JWT_SECRET, { expiresIn: "4h" })
-    return res.json({ tipo_usuario: "alumno", num_control: alumno.num_control, nombre_completo: alumno.nombre_completo, id_perio: periodo?.id_perio ?? null, token })
+    
+    if (!alumno) {
+      return res.status(401).json({ error: "Número de control no encontrado." })
+    }
+    
+    const hashInputSHA1 = crypto.createHash("sha1").update(password).digest("hex")
+    const claveHex = alumno.Clave ? alumno.Clave.toString('hex') : ''
+    
+    if (hashInputSHA1 !== claveHex) {
+      return res.status(401).json({ error: "Contraseña incorrecta." })
+    }
+    
+    const periodo = await executeQuerySingle(`SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`)
+    
+    const token = jwt.sign(
+      { tipo: "alumno", id: alumno.NumControl, nombre: alumno.NombreCompleto }, 
+      JWT_SECRET, 
+      { expiresIn: "4h" }
+    )
+    
+    return res.json({ 
+      tipo_usuario: "alumno", 
+      num_control: alumno.NumControl, 
+      nombre_completo: alumno.NombreCompleto, 
+      id_perio: periodo?.IdPerio ?? null, 
+      token 
+    })
+    
   } catch (err) {
-    console.error("Error en /api/auth/login:", err)
+    console.error("❌ Error en /api/auth/login:", err)
     return res.status(500).json({ error: "Error interno del servidor." })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   ADMIN — CONFIGURACIÓN DE EVALUACIONES
+══════════════════════════════════════════════════════════════ */
+
+// Obtener configuración actual
+app.get("/api/admin/configuracion", authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    console.log("📊 GET /api/admin/configuracion")
+    
+    const periodoActivo = await executeQuerySingle(`
+      SELECT IdPerio, Nombre, NombreCorto, Inicio, Fin
+      FROM dbo.PeriodoEscolar WHERE Situación = 1
+    `)
+    
+    const encuesta = await executeQuerySingle(`
+      SELECT IdEncuesta, Nombre, 
+             FechaInicioTutor, FechaFinTutor, 
+             FechaInicioDocente, FechaFinDocente, 
+             TutorActivo, DocenteActivo,
+             Activa
+      FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1
+    `)
+    
+    const periodos = await executeQuery(`
+      SELECT IdPerio, Nombre, NombreCorto, Situación, Inicio, Fin
+      FROM dbo.PeriodoEscolar ORDER BY IdPerio DESC
+    `)
+    
+    res.json({ periodoActivo, encuesta, periodos })
+    
+  } catch (err) {
+    console.error("Error en /api/admin/configuracion:", err)
+    res.status(500).json({ error: "Error interno." })
+  }
+})
+
+// Activar un periodo específico
+app.post("/api/admin/activar-periodo", authMiddleware, soloAdmin, async (req, res) => {
+  const { idPeriodo } = req.body
+  
+  if (!idPeriodo) {
+    return res.status(400).json({ error: "idPeriodo requerido." })
+  }
+  
+  try {
+    const periodo = await executeQuerySingle(`
+      SELECT IdPerio FROM dbo.PeriodoEscolar WHERE IdPerio = ?
+    `, [idPeriodo])
+    
+    if (!periodo) {
+      return res.status(404).json({ error: "Periodo no encontrado." })
+    }
+    
+    await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 0`)
+    await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 1 WHERE IdPerio = ?`, [idPeriodo])
+    
+    res.json({ success: true, mensaje: `Periodo ${idPeriodo} activado correctamente` })
+  } catch (err) {
+    console.error("Error en /api/admin/activar-periodo:", err)
+    res.status(500).json({ error: "Error interno." })
+  }
+})
+
+// Configurar fechas de evaluación
+app.post("/api/admin/configurar-evaluacion", authMiddleware, soloAdmin, async (req, res) => {
+  console.log("📥 POST /api/admin/configurar-evaluacion")
+  
+  const { 
+    fechaInicioTutor, 
+    fechaFinTutor, 
+    fechaInicioDocente, 
+    fechaFinDocente,
+    tutorActivo, 
+    docenteActivo 
+  } = req.body
+  
+  try {
+    const encuesta = await executeQuerySingle(`
+      SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1
+    `)
+    
+    if (!encuesta) {
+      return res.status(404).json({ error: "No hay encuesta activa configurada." })
+    }
+    
+    const convertirFecha = (fechaStr) => {
+      if (!fechaStr) return null
+      if (fechaStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+        return fechaStr
+      }
+      return fechaStr.replace('T', ' ') + ':00'
+    }
+    
+    await executeQuery(`
+      UPDATE eval.Encuesta SET 
+        FechaInicioTutor = ?,
+        FechaFinTutor = ?,
+        FechaInicioDocente = ?,
+        FechaFinDocente = ?,
+        TutorActivo = ?,
+        DocenteActivo = ?
+      WHERE IdEncuesta = ?
+    `, [
+      convertirFecha(fechaInicioTutor) || '2026-01-12 08:00:00',
+      convertirFecha(fechaFinTutor) || '2026-06-26 23:59:59',
+      convertirFecha(fechaInicioDocente) || '2026-01-12 08:00:00',
+      convertirFecha(fechaFinDocente) || '2026-06-26 23:59:59',
+      tutorActivo ? 1 : 0,
+      docenteActivo ? 1 : 0,
+      encuesta.IdEncuesta
+    ])
+    
+    console.log("✅ Configuración guardada correctamente")
+    res.json({ success: true, mensaje: "Configuración guardada correctamente" })
+    
+  } catch (err) {
+    console.error("❌ Error:", err)
+    res.status(500).json({ error: "Error interno: " + err.message })
   }
 })
 
 /* ══════════════════════════════════════════════════════════════
    ALUMNO — GET /api/alumno/perfil
 ══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   ALUMNO — GET /api/alumno/perfil (SOLO LISTAR, NO CREAR EVALUACIONES)
+══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+  
   try {
-    const [[alumno]] = await pool.query(`
-      SELECT a.num_control, a.nombre_completo, a.correo_e, a.semestre,
-             c.nombre AS carrera, c.nombre_corto AS siglas
-      FROM   alumno a
-      JOIN   carrera c ON c.id_carre = a.id_carre
-      WHERE  a.num_control = ?
+    const alumno = await executeQuerySingle(`
+      SELECT a.NumControl, a.NombreCompleto, a.CorreoE, a.Semestre,
+             c.Nombre AS carrera, c.NombreCorto AS siglas
+      FROM dbo.Alumno a
+      JOIN dbo.Carrera c ON c.IdCarre = a.IdCarre
+      WHERE a.NumControl = ?
     `, [req.user.id])
-    if (!alumno) return res.status(404).json({ error: "Alumno no encontrado." })
-    const [[periodo]] = await pool.query(`SELECT id_perio, nombre FROM periodo_escolar WHERE situacion = 1 LIMIT 1`)
-    const [tutores] = await pool.query(`
-      SELECT  d.id_doce AS id,
-              CONCAT(d.grado, ' ', d.nombre, ' ', d.apellidos) AS nombre,
-              CONCAT(m.nombre_corto, ' — ', g.clave) AS materia,
-              g.clave AS grupo,
-              g.id_grupo
-      FROM    inscripcion i
-      JOIN    grupo g   ON g.id_grupo = i.id_grupo
-      JOIN    docente d ON d.id_doce  = g.id_doce
-      JOIN    materia m ON m.id_mate  = g.id_mate
-      WHERE   i.num_control = ?
-        AND   g.id_perio    = ?
-        AND   i.activa      = 1
-      ORDER BY d.apellidos
-    `, [req.user.id, periodo?.id_perio])
-    return res.json({ ...alumno, periodo: periodo?.nombre, tutores, totalTutores: tutores.length })
+    
+    if (!alumno) {
+      return res.status(404).json({ error: "Alumno no encontrado." })
+    }
+    
+    const periodo = await executeQuerySingle(`
+      SELECT IdPerio, Nombre FROM dbo.PeriodoEscolar WHERE Situación = 1
+    `)
+    
+    if (!periodo) {
+      return res.json({ ...alumno, periodo: null, tutor: null, docentes: [], totalTutores: 0 })
+    }
+    
+    const encuesta = await executeQuerySingle(`
+      SELECT IdEncuesta, 
+             FechaInicioTutor, FechaFinTutor, 
+             FechaInicioDocente, FechaFinDocente,
+             TutorActivo, DocenteActivo,
+             GETDATE() AS FechaActual
+      FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1
+    `)
+    
+    // Obtener TUTOR (materia de tutoría) - SOLO LISTAR, NO CREAR EVALUACIONES
+    let tutor = null
+    if (encuesta) {
+      const tutorData = await executeQuerySingle(`
+        SELECT DISTINCT
+          d.IdDoce AS id,
+          d.Grado + ' ' + d.Nombre + ' ' + d.Apellidos AS nombre,
+          m.Nombre AS materia,
+          g.Clave AS grupo,
+          g.IdGrupo AS id_grupo
+        FROM dbo.CargaAlumno ca
+        JOIN dbo.Grupo g ON g.IdGrupo = ca.IdGrupo
+        JOIN dbo.Docente d ON d.IdDoce = g.IdDoce
+        JOIN dbo.Materia m ON m.IdMate = g.IdMate
+        WHERE ca.NumControl = ?
+          AND g.IdPerio = ?
+          AND ca.Desertor = 0
+          AND (m.NombreCorto LIKE '%TUT%' OR m.Nombre LIKE '%Tutoría%')
+      `, [req.user.id, periodo.IdPerio])
+      
+      if (tutorData) {
+        // SOLO OBTENER ESTADO, NO CREAR
+        const evalEstado = await executeQuerySingle(`
+          SELECT Estado FROM eval.EvaluacionDocente 
+          WHERE NumControl = ? AND IdDoce = ? AND IdPerio = ?
+        `, [req.user.id, tutorData.id, periodo.IdPerio])
+        
+        tutor = {
+          ...tutorData,
+          evaluado: evalEstado?.Estado === 3,
+          estadoEvaluacion: evalEstado?.Estado || null  // null significa que no existe evaluación
+        }
+      }
+    }
+    
+    // Obtener DOCENTES - SOLO LISTAR, NO CREAR EVALUACIONES
+    let docentes = []
+    if (encuesta) {
+      docentes = await executeQuery(`
+        SELECT 
+          d.IdDoce AS id,
+          d.Grado + ' ' + d.Nombre + ' ' + d.Apellidos AS nombre,
+          m.Nombre AS materia,
+          m.NombreCorto AS materiaCorto,
+          g.Clave AS grupo,
+          g.IdGrupo AS id_grupo
+        FROM dbo.CargaAlumno ca
+        JOIN dbo.Grupo g ON g.IdGrupo = ca.IdGrupo
+        JOIN dbo.Docente d ON d.IdDoce = g.IdDoce
+        JOIN dbo.Materia m ON m.IdMate = g.IdMate
+        WHERE ca.NumControl = ?
+          AND g.IdPerio = ?
+          AND ca.Desertor = 0
+          AND (m.NombreCorto NOT LIKE '%TUT%' AND m.Nombre NOT LIKE '%Tutoría%')
+        ORDER BY d.Apellidos
+      `, [req.user.id, periodo.IdPerio])
+      
+      // SOLO OBTENER ESTADO, NO CREAR
+      for (let docente of docentes) {
+        const evalEstado = await executeQuerySingle(`
+          SELECT Estado FROM eval.EvaluacionDocente 
+          WHERE NumControl = ? AND IdDoce = ? AND IdPerio = ?
+        `, [req.user.id, docente.id, periodo.IdPerio])
+        
+        docente.evaluado = evalEstado?.Estado === 3
+        docente.estadoEvaluacion = evalEstado?.Estado || null  // null = no existe evaluación
+      }
+    }
+    
+    // En el endpoint /api/alumno/perfil, donde se construye configuracion
+const configuracion = {
+  tutorActivo: encuesta ? (encuesta.TutorActivo === 1 || encuesta.TutorActivo === true) : false,
+  docenteActivo: encuesta ? (encuesta.DocenteActivo === 1 || encuesta.DocenteActivo === true) : false,
+  fechaInicioTutor: encuesta?.FechaInicioTutor || null,
+  fechaFinTutor: encuesta?.FechaFinTutor || null,
+  fechaInicioDocente: encuesta?.FechaInicioDocente || null,
+  fechaFinDocente: encuesta?.FechaFinDocente || null
+}
+
+// Agrega este log para depurar
+console.log("🔧 Configuración construida:", {
+  tutorActivo: configuracion.tutorActivo,
+  docenteActivo: configuracion.docenteActivo,
+  tutorActivoRaw: encuesta?.TutorActivo,
+  docenteActivoRaw: encuesta?.DocenteActivo
+})
+    
+    const response = {
+      NumControl: alumno.NumControl,
+      NombreCompleto: alumno.NombreCompleto,
+      CorreoE: alumno.CorreoE,
+      Semestre: alumno.Semestre,
+      carrera: alumno.carrera,
+      siglas: alumno.siglas,
+      periodo: periodo.Nombre,
+      idPeriodo: periodo.IdPerio,
+      tutor,
+      docentes,
+      totalTutores: (tutor ? 1 : 0) + docentes.length,
+      completadas: docentes.filter(d => d.evaluado).length + (tutor?.evaluado ? 1 : 0),
+      configuracion
+    }
+    
+    console.log(`✅ Perfil enviado: ${response.completadas}/${response.totalTutores} completadas`)
+    res.json(response)
+    
   } catch (err) {
     console.error("Error en /api/alumno/perfil:", err)
-    return res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno." })
   }
 })
 
 /* ══════════════════════════════════════════════════════════════
    ALUMNO — GET /api/alumno/evaluaciones
 ══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   ALUMNO — GET /api/alumno/evaluaciones (SOLO LISTAR, NO CREAR)
+══════════════════════════════════════════════════════════════ */
 app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+  
   try {
-    const [[periodo]] = await pool.query(`SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`)
+    const periodo = await executeQuerySingle(`SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`)
     if (!periodo) return res.json({ evaluaciones: [] })
-    const [rows] = await pool.query(
-      `SELECT id_doce, estado FROM evaluacion_docente WHERE num_control = ? AND id_perio = ?`,
-      [req.user.id, periodo.id_perio]
-    )
-    return res.json({ evaluaciones: rows.map(r => ({ idTutor: r.id_doce, completada: r.estado === 3 })) })
+    
+    // SOLO LISTAR evaluaciones existentes, NO CREAR NINGUNA
+    const rows = await executeQuery(`
+      SELECT IdDoce, Estado, FechaInicio, FechaFin
+      FROM eval.EvaluacionDocente 
+      WHERE NumControl = ? AND IdPerio = ?
+    `, [req.user.id, periodo.IdPerio])
+    
+    const evaluaciones = rows.map(r => ({ 
+      idTutor: r.IdDoce, 
+      completada: r.Estado === 3,
+      estado: r.Estado,
+      fechaInicio: r.FechaInicio,
+      fechaFin: r.FechaFin
+    }))
+    
+    res.json({ evaluaciones })
   } catch (err) {
     console.error("Error en /api/alumno/evaluaciones:", err)
-    return res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno." })
   }
 })
 
@@ -263,17 +552,20 @@ app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
   try {
-    const [[encuesta]] = await pool.query(
-      `SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1`
-    )
+    const encuesta = await executeQuerySingle(`
+      SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1
+    `)
+    
     if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa." })
-    const [preguntas] = await pool.query(`
-      SELECT id_pregunta AS id, id_categoria AS idCategoria, texto
-      FROM   pregunta
-      WHERE  id_encuesta = ? AND activa = 1
-      ORDER  BY orden
-    `, [encuesta.id_encuesta])
-    return res.json({ idEncuesta: encuesta.id_encuesta, preguntas, totalPreguntas: preguntas.length })
+    
+    const preguntas = await executeQuery(`
+      SELECT IdPregunta AS id, IdCategoria AS idCategoria, Texto
+      FROM eval.Pregunta
+      WHERE IdEncuesta = ? AND Activa = 1
+      ORDER BY Orden
+    `, [encuesta.IdEncuesta])
+    
+    return res.json({ idEncuesta: encuesta.IdEncuesta, preguntas, totalPreguntas: preguntas.length })
   } catch (err) {
     console.error("Error en /api/encuesta/preguntas:", err)
     return res.status(500).json({ error: "Error interno." })
@@ -281,156 +573,275 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
+   ENCUESTA — GET /api/encuesta/categorias
+══════════════════════════════════════════════════════════════ */
+app.get("/api/encuesta/categorias", authMiddleware, async (req, res) => {
+  try {
+    const categorias = await executeQuery(`
+      SELECT IdCategoria AS id, Nombre, Orden, Activa
+      FROM eval.Categoria
+      WHERE Activa = 1
+      ORDER BY Orden
+    `);
+    
+    res.json({ categorias });
+  } catch (err) {
+    console.error("Error en /api/encuesta/categorias:", err);
+    res.status(500).json({ error: "Error interno." });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   ENCUESTA — GET /api/encuesta/rubrica
+══════════════════════════════════════════════════════════════ */
+app.get("/api/encuesta/rubrica", authMiddleware, async (req, res) => {
+  try {
+    const rubrica = await executeQuery(`
+      SELECT IdCategoria AS idCategoria, Valor, Descripcion
+      FROM eval.Rubrica
+      ORDER BY IdCategoria, Valor
+    `);
+    
+    res.json({ rubrica });
+  } catch (err) {
+    console.error("Error en /api/encuesta/rubrica:", err);
+    res.status(500).json({ error: "Error interno." });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   ENCUESTA — GET /api/encuesta/escala
+══════════════════════════════════════════════════════════════ */
+app.get("/api/encuesta/escala", authMiddleware, async (req, res) => {
+  try {
+    const escala = {
+      5: "Excelente",
+      4: "Muy bueno",
+      3: "Bueno",
+      2: "Regular",
+      1: "Deficiente"
+    };
+    
+    res.json({ escala });
+  } catch (err) {
+    console.error("Error en /api/encuesta/escala:", err);
+    res.status(500).json({ error: "Error interno." });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
    EVALUACIÓN — POST /api/evaluacion/iniciar
 ══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   EVALUACIÓN — POST /api/evaluacion/iniciar (CORREGIDO)
+══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   EVALUACIÓN — POST /api/evaluacion/iniciar (CORREGIDO)
+══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+  
   const { idTutor, idGrupo } = req.body
-  if (!idTutor || !idGrupo) return res.status(400).json({ error: "idTutor e idGrupo requeridos." })
-  const conn = await pool.getConnection()
+  console.log("📥 POST /api/evaluacion/iniciar - idTutor:", idTutor, "idGrupo:", idGrupo)
+  
+  if (!idTutor || !idGrupo) {
+    return res.status(400).json({ error: "idTutor e idGrupo requeridos." })
+  }
+  
   try {
-    await conn.beginTransaction()
-    const [[periodo]]  = await conn.query(`SELECT id_perio FROM periodo_escolar WHERE situacion = 1 LIMIT 1`)
-    const [[encuesta]] = await conn.query(`SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1`)
+    const periodo = await executeQuerySingle(`SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`)
+    const encuesta = await executeQuerySingle(`SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1`)
+    
     if (!periodo || !encuesta) {
-      await conn.rollback()
       return res.status(409).json({ error: "No hay encuesta o periodo activo." })
     }
-    const [[existente]] = await conn.query(
-      `SELECT id_evaluacion, estado FROM evaluacion_docente WHERE num_control = ? AND id_doce = ? AND id_perio = ? LIMIT 1`,
-      [req.user.id, idTutor, periodo.id_perio]
-    )
-    if (existente?.estado === 3) {
-      await conn.rollback()
+    
+    // Verificar que el grupo pertenezca al docente
+    const grupo = await executeQuerySingle(`
+      SELECT IdGrupo, IdDoce FROM dbo.Grupo WHERE IdGrupo = ? AND IdDoce = ?
+    `, [idGrupo, idTutor])
+    
+    if (!grupo) {
+      console.log("❌ El grupo no pertenece al docente")
+      return res.status(400).json({ error: "El grupo no pertenece al docente especificado." })
+    }
+    
+    // Buscar evaluación existente
+    const existente = await executeQuerySingle(`
+      SELECT IdEvaluacion, Estado FROM eval.EvaluacionDocente 
+      WHERE NumControl = ? AND IdDoce = ? AND IdPerio = ?
+    `, [req.user.id, idTutor, periodo.IdPerio])
+    
+    // Si ya existe una evaluación COMPLETADA, no permitir
+    if (existente && existente.Estado === 3) {
       return res.status(409).json({ error: "Ya completaste esta evaluación." })
     }
-    let idEvaluacion
-    if (existente) {
-      idEvaluacion = existente.id_evaluacion
-    } else {
-      const [ins] = await conn.query(
-        `INSERT INTO evaluacion_docente (id_encuesta, num_control, id_doce, id_grupo, id_perio, estado, pagina_actual) VALUES (?, ?, ?, ?, ?, 1, 0)`,
-        [encuesta.id_encuesta, req.user.id, idTutor, idGrupo, periodo.id_perio]
-      )
-      idEvaluacion = ins.insertId
+    
+    // Si ya existe una evaluación INICIADA, devolverla
+    if (existente && existente.Estado === 1) {
+      return res.json({ 
+        idEvaluacion: existente.IdEvaluacion, 
+        idEncuesta: encuesta.IdEncuesta, 
+        mensaje: "Evaluación ya iniciada" 
+      })
     }
-    await conn.commit()
-    return res.json({ idEvaluacion, idEncuesta: encuesta.id_encuesta, mensaje: "Evaluación iniciada correctamente" })
+    
+    // Crear nueva evaluación
+    const insertResult = await executeQuery(`
+      INSERT INTO eval.EvaluacionDocente (IdEncuesta, NumControl, IdDoce, IdGrupo, IdPerio, Estado, IpOrigen)
+      OUTPUT INSERTED.IdEvaluacion
+      VALUES (?, ?, ?, ?, ?, 1, ?)
+    `, [encuesta.IdEncuesta, req.user.id, idTutor, idGrupo, periodo.IdPerio, req.ip || 'unknown'])
+    
+    const idEvaluacion = insertResult[0]?.IdEvaluacion
+    console.log("✅ Evaluación creada con ID:", idEvaluacion, "IdDoce:", idTutor)
+    
+    return res.json({ idEvaluacion, idEncuesta: encuesta.IdEncuesta, mensaje: "Evaluación iniciada correctamente" })
   } catch (err) {
-    await conn.rollback()
     console.error("Error en /api/evaluacion/iniciar:", err)
     return res.status(500).json({ error: "Error interno." })
-  } finally {
-    conn.release()
   }
 })
 
 /* ══════════════════════════════════════════════════════════════
-   EVALUACIÓN — POST /api/evaluacion/responder
+   EVALUACIÓN — POST /api/evaluacion/responder (CORREGIDO)
+══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   EVALUACIÓN — POST /api/evaluacion/responder (CORREGIDO)
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
-  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+  if (req.user.tipo !== "alumno") {
+    return res.status(403).json({ error: "Acceso denegado" })
+  }
+  
   const { idEvaluacion, respuestas } = req.body
-  if (!idEvaluacion || !Array.isArray(respuestas) || !respuestas.length) return res.status(400).json({ error: "Datos incompletos." })
-  const conn = await pool.getConnection()
+  if (!idEvaluacion || !Array.isArray(respuestas) || !respuestas.length) {
+    return res.status(400).json({ error: "Datos incompletos." })
+  }
+  
   try {
-    await conn.beginTransaction()
-    const [[ev]] = await conn.query(
-      `SELECT id_evaluacion, estado, num_control FROM evaluacion_docente WHERE id_evaluacion = ? LIMIT 1`,
-      [idEvaluacion]
-    )
-    if (!ev) { await conn.rollback(); return res.status(404).json({ error: "Evaluación no encontrada." }) }
-    if (ev.num_control !== req.user.id) { await conn.rollback(); return res.status(403).json({ error: "No es tu evaluación." }) }
-    if (ev.estado === 3) { await conn.rollback(); return res.status(409).json({ error: "Ya fue completada." }) }
-    for (const r of respuestas) {
-      await conn.query(
-        `INSERT INTO respuesta_evaluacion (id_evaluacion, id_pregunta, calificacion) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE calificacion = VALUES(calificacion)`,
-        [idEvaluacion, r.idPregunta, r.calificacion]
-      )
+    // Verificar si la evaluación existe
+    let ev = await executeQuerySingle(`
+      SELECT IdEvaluacion, Estado, NumControl, IdEncuesta, IdPerio, IdDoce, IdGrupo
+      FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?
+    `, [idEvaluacion])
+    
+    // Si no existe la evaluación, crearla
+    if (!ev) {
+      console.log(`⚠️ Evaluación ${idEvaluacion} no encontrada, creando...`)
+      
+      // Obtener datos necesarios para crear la evaluación
+      const periodo = await executeQuerySingle(`SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`)
+      const encuesta = await executeQuerySingle(`SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1`)
+      
+      // Obtener el docente de las respuestas (asumiendo que todas son para el mismo docente)
+      // Necesitas pasar idDocente en el body o almacenarlo
+      
+      // Por ahora, buscamos el IdDoce desde el grupo
+      const grupo = await executeQuerySingle(`
+        SELECT IdDoce FROM dbo.Grupo WHERE IdGrupo = (SELECT IdGrupo FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?)
+      `, [idEvaluacion])
+      
+      // Crear la evaluación
+      const insertResult = await executeQuery(`
+        INSERT INTO eval.EvaluacionDocente (IdEncuesta, NumControl, IdDoce, IdGrupo, IdPerio, Estado, FechaInicio)
+        OUTPUT INSERTED.IdEvaluacion
+        VALUES (?, ?, ?, ?, ?, 1, GETDATE())
+      `, [encuesta.IdEncuesta, req.user.id, grupo?.IdDoce, idGrupo, periodo.IdPerio])
+      
+      ev = await executeQuerySingle(`
+        SELECT IdEvaluacion, Estado, NumControl, IdEncuesta, IdPerio, IdDoce, IdGrupo
+        FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?
+      `, [insertResult[0]?.IdEvaluacion])
     }
-    await conn.query(`CALL sp_CompletarEvaluacion(?, @ok, @msg)`, [idEvaluacion])
-    const [[result]] = await conn.query(`SELECT @ok AS ok, @msg AS msg`)
-    await conn.commit()
-    if (result.ok === 1) return res.json({ success: true, mensaje: "Evaluación completada correctamente." })
-    return res.status(400).json({ error: result.msg || "Error al completar la evaluación" })
+    
+    if (!ev) return res.status(404).json({ error: "Evaluación no encontrada." })
+    if (ev.NumControl !== req.user.id) return res.status(403).json({ error: "No es tu evaluación." })
+    
+    // Insertar respuestas
+    for (const r of respuestas) {
+      await executeQuery(`
+        IF EXISTS (SELECT 1 FROM eval.RespuestaEvaluacion WHERE IdEvaluacion = ? AND IdPregunta = ?)
+          UPDATE eval.RespuestaEvaluacion SET Calificacion = ?, FechaResp = GETDATE() 
+          WHERE IdEvaluacion = ? AND IdPregunta = ?
+        ELSE
+          INSERT INTO eval.RespuestaEvaluacion (IdEvaluacion, IdPregunta, Calificacion, FechaResp)
+          VALUES (?, ?, ?, GETDATE())
+      `, [idEvaluacion, r.idPregunta, r.calificacion, idEvaluacion, r.idPregunta, idEvaluacion, r.idPregunta, r.calificacion])
+    }
+    
+    // Verificar si todas las preguntas están respondidas
+    const totalRequeridas = await executeQuerySingle(`
+      SELECT COUNT(*) AS total FROM eval.Pregunta 
+      WHERE IdEncuesta = ? AND Requerida = 1 AND Activa = 1
+    `, [ev.IdEncuesta])
+    
+    const totalRespondidas = await executeQuerySingle(`
+      SELECT COUNT(*) AS total FROM eval.RespuestaEvaluacion re
+      JOIN eval.Pregunta p ON p.IdPregunta = re.IdPregunta
+      WHERE re.IdEvaluacion = ? AND p.Requerida = 1
+    `, [idEvaluacion])
+    
+    if (totalRespondidas.total >= totalRequeridas.total) {
+      await executeQuery(`
+        UPDATE eval.EvaluacionDocente SET Estado = 3, FechaFin = GETDATE() 
+        WHERE IdEvaluacion = ?
+      `, [idEvaluacion])
+      return res.json({ success: true, mensaje: "Evaluación completada correctamente." })
+    }
+    
+    return res.json({ success: true, mensaje: "Respuestas guardadas correctamente." })
+    
   } catch (err) {
-    await conn.rollback()
     console.error("Error en /api/evaluacion/responder:", err)
     return res.status(500).json({ error: "Error interno." })
-  } finally {
-    conn.release()
   }
 })
 
+
+
+
 /* ══════════════════════════════════════════════════════════════
-   EVALUACIÓN — POST /api/evaluacion/comentario  ← NUEVO
-   Body: { idEvaluacion, numControl, idDocente, comentario }
-   Guarda el comentario del alumno en comentario_evaluacion
+   EVALUACIÓN — POST /api/evaluacion/comentario
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
   if (req.user.tipo !== "alumno") {
     return res.status(403).json({ error: "Acceso denegado" })
   }
 
-  const { idEvaluacion, numControl, idDocente, comentario } = req.body
+  const { idEvaluacion, idDocente, comentario } = req.body
 
   if (!idEvaluacion || !idDocente || !comentario) {
     return res.status(400).json({ error: "idEvaluacion, idDocente y comentario son requeridos." })
   }
 
   const texto = String(comentario).trim()
+  if (texto.length < 10) return res.status(400).json({ error: "El comentario debe tener al menos 10 caracteres." })
+  if (texto.length > 1000) return res.status(400).json({ error: "El comentario no puede superar los 1000 caracteres." })
 
-  if (texto.length < 10) {
-    return res.status(400).json({ error: "El comentario debe tener al menos 10 caracteres." })
-  }
-
-  if (texto.length > 1000) {
-    return res.status(400).json({ error: "El comentario no puede superar los 1000 caracteres." })
-  }
-
-  const conn = await pool.getConnection()
   try {
-    await conn.beginTransaction()
+    const evaluacion = await executeQuerySingle(`
+      SELECT IdEvaluacion, NumControl FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?
+    `, [idEvaluacion])
 
-    // Verificar que la evaluación existe y pertenece al alumno autenticado
-    const [[evaluacion]] = await conn.query(
-      `SELECT id_evaluacion, num_control, id_doce, estado
-       FROM evaluacion_docente
-       WHERE id_evaluacion = ? LIMIT 1`,
-      [idEvaluacion]
-    )
+    if (!evaluacion) return res.status(404).json({ error: "Evaluación no encontrada." })
+    if (evaluacion.NumControl !== req.user.id) return res.status(403).json({ error: "No tienes permiso." })
 
-    if (!evaluacion) {
-      await conn.rollback()
-      return res.status(404).json({ error: "Evaluación no encontrada." })
-    }
+    await executeQuery(`
+      IF EXISTS (SELECT 1 FROM eval.ComentarioEvaluacion WHERE IdEvaluacion = ?)
+        UPDATE eval.ComentarioEvaluacion SET Comentario = ?, FechaCreacion = GETDATE(), Visible = 1
+        WHERE IdEvaluacion = ?
+      ELSE
+        INSERT INTO eval.ComentarioEvaluacion (IdEvaluacion, NumControl, IdDoce, Comentario, FechaCreacion, Visible)
+        VALUES (?, ?, ?, ?, GETDATE(), 1)
+    `, [idEvaluacion, texto, idEvaluacion, idEvaluacion, req.user.id, idDocente, texto])
 
-    if (evaluacion.num_control !== req.user.id) {
-      await conn.rollback()
-      return res.status(403).json({ error: "No tienes permiso para comentar esta evaluación." })
-    }
-
-    // Insertar o actualizar comentario
-    await conn.query(
-      `INSERT INTO comentario_evaluacion
-         (id_evaluacion, num_control, id_doce, comentario, fecha_creacion, visible)
-       VALUES (?, ?, ?, ?, NOW(), 1)
-       ON DUPLICATE KEY UPDATE
-         comentario     = VALUES(comentario),
-         fecha_creacion = NOW(),
-         visible        = 1`,
-      [idEvaluacion, req.user.id, idDocente, texto]
-    )
-
-    await conn.commit()
     return res.json({ success: true, mensaje: "Comentario guardado correctamente." })
-
   } catch (err) {
-    await conn.rollback()
     console.error("❌ Error en POST /api/evaluacion/comentario:", err)
-    return res.status(500).json({ error: "Error interno: " + err.message })
-  } finally {
-    conn.release()
+    return res.status(500).json({ error: "Error interno." })
   }
 })
 
@@ -439,19 +850,19 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT d.id_doce AS id,
-             CONCAT(d.grado, ' ', d.nombre, ' ', d.apellidos) AS nombre,
-             dep.nombre AS departamento
-      FROM   docente d
-      LEFT JOIN departamento dep ON dep.id_depa = d.id_depa
-      WHERE  d.vigente = 1
-      ORDER BY dep.nombre, d.apellidos
+    const rows = await executeQuery(`
+      SELECT d.IdDoce AS id,
+             d.Grado + ' ' + d.Nombre + ' ' + d.Apellidos AS nombre,
+             ISNULL(dep.Nombre, 'Sin Departamento') AS departamento
+      FROM dbo.Docente d
+      LEFT JOIN dbo.Departamento dep ON dep.IdDepa = d.IdDepa
+      WHERE d.Vigente = 1
+      ORDER BY dep.Nombre, d.Apellidos
     `)
-    return res.json({ docentes: rows })
+    res.json({ docentes: rows })
   } catch (err) {
     console.error("Error en /api/dashboard/docentes:", err)
-    return res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno." })
   }
 })
 
@@ -460,13 +871,98 @@ app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) =
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id_perio AS id, nombre, situacion AS activo FROM periodo_escolar ORDER BY id_perio DESC`
-    )
-    return res.json({ periodos: rows })
+    const rows = await executeQuery(`
+      SELECT 
+        IdPerio AS id, 
+        Nombre, 
+        NombreCorto,
+        Situación AS activo,
+        Inicio,
+        Fin,
+        CASE 
+          WHEN Situación = 1 THEN 'Activo'
+          WHEN Inicio > GETDATE() THEN 'Próximo'
+          WHEN Fin < GETDATE() THEN 'Finalizado'
+          ELSE 'En curso'
+        END AS estado
+      FROM dbo.PeriodoEscolar 
+      ORDER BY IdPerio DESC
+    `)
+    res.json({ periodos: rows })
   } catch (err) {
     console.error("Error en /api/dashboard/periodos:", err)
-    return res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno." })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/periodo-activo
+══════════════════════════════════════════════════════════════ */
+app.get("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req, res) => {
+  try {
+    const periodo = await executeQuerySingle(`
+      SELECT 
+        IdPerio AS id, 
+        Nombre, 
+        NombreCorto,
+        Situación AS activo,
+        Inicio,
+        Fin
+      FROM dbo.PeriodoEscolar 
+      WHERE Situación = 1
+    `)
+    
+    if (!periodo) {
+      return res.json({ existe: false, mensaje: "No hay periodo activo configurado" })
+    }
+    
+    res.json({ existe: true, periodo })
+  } catch (err) {
+    console.error("Error en /api/dashboard/periodo-activo:", err)
+    res.status(500).json({ error: "Error interno." })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — POST /api/dashboard/periodo-activo
+══════════════════════════════════════════════════════════════ */
+app.post("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req, res) => {
+  const { idPeriodo } = req.body
+  
+  if (!idPeriodo) {
+    return res.status(400).json({ error: "idPeriodo requerido." })
+  }
+  
+  const periodoId = parseInt(idPeriodo)
+  if (isNaN(periodoId)) {
+    return res.status(400).json({ error: "idPeriodo inválido." })
+  }
+  
+  try {
+    const periodoExiste = await executeQuerySingle(`
+      SELECT IdPerio FROM dbo.PeriodoEscolar WHERE IdPerio = ?
+    `, [periodoId])
+    
+    if (!periodoExiste) {
+      return res.status(404).json({ error: "Periodo no encontrado." })
+    }
+    
+    await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 0`)
+    await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 1 WHERE IdPerio = ?`, [periodoId])
+    
+    const nuevoActivo = await executeQuerySingle(`
+      SELECT IdPerio AS id, Nombre, NombreCorto, Inicio, Fin
+      FROM dbo.PeriodoEscolar WHERE IdPerio = ?
+    `, [periodoId])
+    
+    res.json({ 
+      success: true, 
+      mensaje: `Periodo ${nuevoActivo.Nombre} activado correctamente`,
+      periodo: nuevoActivo
+    })
+  } catch (err) {
+    console.error("Error en POST /api/dashboard/periodo-activo:", err)
+    res.status(500).json({ error: "Error interno." })
   }
 })
 
@@ -476,23 +972,402 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
 app.get("/api/dashboard/docentes/:idDocente/periodos/:idPeriodo/grupos", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo } = req.params
   try {
-    const [rows] = await pool.query(`
-      SELECT g.id_grupo AS id, g.clave
-      FROM   grupo g
-      WHERE  g.id_doce = ? AND g.id_perio = ?
-      ORDER BY g.clave
+    const rows = await executeQuery(`
+      SELECT g.IdGrupo AS id, g.Clave, m.Nombre AS materia
+      FROM dbo.Grupo g
+      LEFT JOIN dbo.Materia m ON m.IdMate = g.IdMate
+      WHERE g.IdDoce = ? AND g.IdPerio = ?
+      ORDER BY g.Clave
     `, [parseInt(idDocente), parseInt(idPeriodo)])
-    return res.json({ grupos: rows })
+    res.json({ grupos: rows })
   } catch (err) {
     console.error("Error en /api/dashboard/grupos:", err)
-    return res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno." })
   }
 })
 
 /* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/docentes/:idDocente/comentarios  ← NUEVO
-   Query params: ?idPeriodo=X
-   Retorna comentarios visibles del docente en ese periodo
+   DASHBOARD — GET /api/dashboard/docente/:idDocente/alumnos
+══════════════════════════════════════════════════════════════ */
+app.get("/api/dashboard/docente/:idDocente/alumnos", authMiddleware, soloAdmin, async (req, res) => {
+  const { idDocente } = req.params
+  const { idPeriodo } = req.query
+
+  if (!idPeriodo) {
+    return res.status(400).json({ error: "idPeriodo requerido." })
+  }
+
+  const docenteId = parseInt(idDocente)
+  const periodoId = parseInt(idPeriodo)
+
+  if (isNaN(docenteId) || isNaN(periodoId)) {
+    return res.status(400).json({ error: "IDs inválidos." })
+  }
+
+  try {
+    const alumnos = await executeQuery(`
+      SELECT 
+        a.NumControl AS numControl,
+        a.NombreCompleto AS nombre,
+        a.CorreoE AS correo,
+        a.Semestre AS semestreAlumno,
+        ca.SemestreAlumno AS semestreCarga,
+        g.IdGrupo AS idGrupo,
+        g.Clave AS grupo,
+        m.Nombre AS materia,
+        m.NombreCorto AS materiaCorto,
+        ca.CalFinal AS calificacion,
+        ca.FaltasTotales AS faltas,
+        ca.Desertor AS desertor,
+        CASE 
+          WHEN ed.Estado = 3 THEN 'completada'
+          WHEN ed.Estado IS NOT NULL THEN 'en_proceso'
+          ELSE 'pendiente'
+        END AS estadoEvaluacion,
+        ed.FechaInicio,
+        ed.FechaFin
+      FROM dbo.CargaAlumno ca
+      INNER JOIN dbo.Grupo g ON g.IdGrupo = ca.IdGrupo
+      INNER JOIN dbo.Alumno a ON a.NumControl = ca.NumControl
+      INNER JOIN dbo.Materia m ON m.IdMate = g.IdMate
+      LEFT JOIN eval.EvaluacionDocente ed ON 
+        ed.NumControl = ca.NumControl 
+        AND ed.IdDoce = g.IdDoce 
+        AND ed.IdGrupo = g.IdGrupo
+        AND ed.IdPerio = g.IdPerio
+      WHERE g.IdDoce = ?
+        AND g.IdPerio = ?
+        AND ca.Desertor = 0
+      ORDER BY a.NombreCompleto, m.Nombre
+    `, [docenteId, periodoId])
+
+    res.json({ alumnos })
+  } catch (err) {
+    console.error("❌ Error en /api/dashboard/docente/:id/alumnos:", err)
+    res.status(500).json({ error: "Error interno: " + err.message })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/departamentos
+══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/departamentos (VERSIÓN COMPLETA)
+══════════════════════════════════════════════════════════════ */
+app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, res) => {
+  const { idPeriodo } = req.query
+  if (!idPeriodo) {
+    return res.status(400).json({ error: "idPeriodo requerido." })
+  }
+
+  const periodoId = parseInt(idPeriodo)
+  if (isNaN(periodoId)) {
+    return res.status(400).json({ error: "idPeriodo inválido." })
+  }
+
+  try {
+    console.log(`📊 GET /api/dashboard/departamentos - Periodo: ${periodoId}`)
+    
+    // 1. Obtener departamentos con docentes que tienen grupos en el periodo
+    const departamentos = await executeQuery(`
+      SELECT DISTINCT
+        dep.IdDepa AS id,
+        dep.Nombre AS nombre
+      FROM dbo.Departamento dep
+      INNER JOIN dbo.Docente d ON d.IdDepa = dep.IdDepa AND d.Vigente = 1
+      INNER JOIN dbo.Grupo g ON g.IdDoce = d.IdDoce AND g.IdPerio = ?
+      ORDER BY dep.Nombre
+    `, [periodoId])
+
+    console.log(`📊 Departamentos encontrados: ${departamentos.length}`)
+
+    if (!departamentos.length) {
+      return res.json({ departamentos: [] })
+    }
+
+    const resultado = []
+
+    for (const depto of departamentos) {
+      // 2. Obtener docentes del departamento
+      const docentesDepto = await executeQuery(`
+        SELECT 
+          d.IdDoce AS id,
+          d.Grado + ' ' + d.Nombre + ' ' + d.Apellidos AS nombre
+        FROM dbo.Docente d
+        INNER JOIN dbo.Grupo g ON g.IdDoce = d.IdDoce AND g.IdPerio = ?
+        WHERE d.IdDepa = ? AND d.Vigente = 1
+        GROUP BY d.IdDoce, d.Grado, d.Nombre, d.Apellidos
+        ORDER BY d.Apellidos
+      `, [periodoId, depto.id])
+
+      const totalDocentes = docentesDepto.length
+      if (totalDocentes === 0) continue
+
+      const docenteIds = docentesDepto.map(d => d.id)
+      
+      // 3. Contar alumnos por departamento
+      let alumnosQuery = `
+        SELECT
+          COUNT(DISTINCT i.NumControl) AS total_alumnos,
+          COUNT(DISTINCT CASE WHEN e.Estado = 3 THEN i.NumControl END) AS alumnos_completaron
+        FROM eval.Inscripcion i
+        JOIN dbo.Grupo g ON g.IdGrupo = i.IdGrupo
+          AND g.IdDoce IN (${docenteIds.map(() => '?').join(',')})
+          AND g.IdPerio = ?
+        LEFT JOIN eval.EvaluacionDocente e ON e.NumControl = i.NumControl
+          AND e.IdDoce = g.IdDoce
+          AND e.IdPerio = ?
+          AND e.Estado = 3
+        WHERE i.Activa = 1
+      `
+      const alumnosParams = [...docenteIds, periodoId, periodoId]
+      const alumnosCounts = await executeQuerySingle(alumnosQuery, alumnosParams)
+
+      const totalAlumnos = alumnosCounts?.total_alumnos ?? 0
+      const alumnosCompletaron = alumnosCounts?.alumnos_completaron ?? 0
+      const participacion = totalAlumnos > 0
+        ? parseFloat(((alumnosCompletaron / totalAlumnos) * 100).toFixed(1))
+        : 0
+
+      // 4. Contar docentes evaluados
+      const evCounts = await executeQuerySingle(`
+        SELECT COUNT(DISTINCT IdDoce) AS evaluados
+        FROM eval.EvaluacionDocente
+        WHERE IdDoce IN (${docenteIds.map(() => '?').join(',')})
+          AND IdPerio = ?
+          AND Estado = 3
+      `, [...docenteIds, periodoId])
+
+      const docentesEvaluados = evCounts?.evaluados ?? 0
+
+      // 5. Obtener promedios por docente
+      const promediosDocentes = await executeQuery(`
+        SELECT
+          e.IdDoce,
+          ROUND(AVG(CAST(r.Calificacion AS FLOAT)), 2) AS promedio
+        FROM eval.EvaluacionDocente e
+        JOIN eval.RespuestaEvaluacion r ON r.IdEvaluacion = e.IdEvaluacion
+        WHERE e.IdDoce IN (${docenteIds.map(() => '?').join(',')})
+          AND e.IdPerio = ?
+          AND e.Estado = 3
+        GROUP BY e.IdDoce
+      `, [...docenteIds, periodoId])
+
+      const promedioGeneral = promediosDocentes.length
+        ? parseFloat((promediosDocentes.reduce((s, d) => s + Number(d.promedio), 0) / promediosDocentes.length).toFixed(2))
+        : 0
+
+      const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
+        : promedioGeneral >= 3.5 ? "MUY BUENO"
+        : promedioGeneral >= 2.5 ? "BUENO"
+        : promedioGeneral >= 1.5 ? "REGULAR"
+        : promedioGeneral > 0 ? "DEFICIENTE"
+        : "SIN DATOS"
+
+      // 6. Obtener estadísticas por docente
+      const docentesConStats = []
+      for (const doc of docentesDepto) {
+        const docProm = await executeQuerySingle(`
+          SELECT COALESCE(ROUND(AVG(CAST(r.Calificacion AS FLOAT)), 2), 0) AS promedio
+          FROM eval.EvaluacionDocente e
+          JOIN eval.RespuestaEvaluacion r ON r.IdEvaluacion = e.IdEvaluacion
+          WHERE e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+        `, [doc.id, periodoId])
+
+        const docAlumnos = await executeQuerySingle(`
+          SELECT
+            COUNT(DISTINCT i.NumControl) AS total,
+            COUNT(DISTINCT CASE WHEN e.Estado = 3 THEN i.NumControl END) AS completaron
+          FROM eval.Inscripcion i
+          JOIN dbo.Grupo g ON g.IdGrupo = i.IdGrupo AND g.IdDoce = ? AND g.IdPerio = ?
+          LEFT JOIN eval.EvaluacionDocente e ON e.NumControl = i.NumControl
+            AND e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+          WHERE i.Activa = 1
+        `, [doc.id, periodoId, doc.id, periodoId])
+
+        const promedio = Number(docProm?.promedio || 0)
+        const docClasif = promedio >= 4.5 ? "EXCELENTE"
+          : promedio >= 3.5 ? "MUY BUENO"
+          : promedio >= 2.5 ? "BUENO"
+          : promedio >= 1.5 ? "REGULAR"
+          : promedio > 0 ? "DEFICIENTE"
+          : "SIN DATOS"
+
+        docentesConStats.push({
+          id: doc.id,
+          nombre: doc.nombre,
+          promedio,
+          clasificacion: docClasif,
+          totalAlumnos: docAlumnos?.total ?? 0,
+          alumnosCompletaron: docAlumnos?.completaron ?? 0,
+        })
+      }
+
+      resultado.push({
+        id: depto.id,
+        nombre: depto.nombre,
+        totalDocentes,
+        docentesEvaluados,
+        promedioGeneral,
+        participacionAlumnos: participacion,
+        clasificacion,
+        docentes: docentesConStats,
+      })
+    }
+
+    resultado.sort((a, b) => b.promedioGeneral - a.promedioGeneral)
+    console.log(`✅ Departamentos procesados: ${resultado.length}`)
+    res.json({ departamentos: resultado })
+
+  } catch (err) {
+    console.error("❌ Error en /api/dashboard/departamentos:", err)
+    res.status(500).json({ error: "Error interno: " + err.message })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/resultados
+══════════════════════════════════════════════════════════════ */
+app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
+  const { idDocente, idPeriodo, idGrupo } = req.query
+  if (!idDocente || !idPeriodo) {
+    return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
+  }
+
+  try {
+    const docenteId = parseInt(idDocente)
+    const periodoId = parseInt(idPeriodo)
+    if (isNaN(docenteId) || isNaN(periodoId)) {
+      return res.status(400).json({ error: "IDs inválidos" })
+    }
+
+    const grupoId = idGrupo ? parseInt(idGrupo) : null
+
+    const docente = await executeQuerySingle(`
+      SELECT IdDoce, Grado + ' ' + Nombre + ' ' + Apellidos AS nombre
+      FROM dbo.Docente WHERE IdDoce = ?
+    `, [docenteId])
+
+    if (!docente) {
+      return res.status(404).json({ error: "Docente no encontrado." })
+    }
+
+    const periodo = await executeQuerySingle(`
+      SELECT IdPerio, Nombre FROM dbo.PeriodoEscolar WHERE IdPerio = ?
+    `, [periodoId])
+
+    let promediosCatQuery = `
+      SELECT c.IdCategoria, c.Nombre,
+             COALESCE(ROUND(AVG(CAST(r.Calificacion AS FLOAT)), 2), 0) AS promedio
+      FROM eval.Categoria c
+      LEFT JOIN eval.Pregunta p ON p.IdCategoria = c.IdCategoria
+        AND p.IdEncuesta = (SELECT TOP 1 IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1)
+      LEFT JOIN eval.RespuestaEvaluacion r ON r.IdPregunta = p.IdPregunta
+      LEFT JOIN eval.EvaluacionDocente e ON e.IdEvaluacion = r.IdEvaluacion
+        AND e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+    `
+    const promediosParams = [docenteId, periodoId]
+    if (grupoId) {
+      promediosCatQuery += ` AND e.IdGrupo = ?`
+      promediosParams.push(grupoId)
+    }
+    promediosCatQuery += ` GROUP BY c.IdCategoria, c.Nombre ORDER BY c.IdCategoria`
+
+    const promediosCat = await executeQuery(promediosCatQuery, promediosParams)
+
+    let countsQuery = `
+      SELECT
+        COUNT(DISTINCT i.NumControl) AS total_alumnos,
+        COUNT(DISTINCT CASE WHEN e.Estado = 3 THEN e.NumControl END) AS completaron
+      FROM eval.Inscripcion i
+      JOIN dbo.Grupo g ON g.IdGrupo = i.IdGrupo AND g.IdDoce = ? AND g.IdPerio = ?
+      LEFT JOIN eval.EvaluacionDocente e ON e.NumControl = i.NumControl
+        AND e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+      WHERE i.Activa = 1
+    `
+    const countsParams = [docenteId, periodoId, docenteId, periodoId]
+    if (grupoId) {
+      countsQuery += ` AND g.IdGrupo = ?`
+      countsParams.push(grupoId)
+    }
+
+    const counts = await executeQuerySingle(countsQuery, countsParams)
+
+    let completaronQuery = `
+      SELECT a.NumControl AS numControl, a.NombreCompleto AS nombre,
+             c.NombreCorto AS carrera, g.Clave AS grupo
+      FROM eval.EvaluacionDocente e
+      JOIN dbo.Alumno a ON a.NumControl = e.NumControl
+      JOIN dbo.Carrera c ON c.IdCarre = a.IdCarre
+      JOIN dbo.Grupo g ON g.IdGrupo = e.IdGrupo
+      WHERE e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+    `
+    const completaronParams = [docenteId, periodoId]
+    if (grupoId) {
+      completaronQuery += ` AND e.IdGrupo = ?`
+      completaronParams.push(grupoId)
+    }
+    completaronQuery += ` ORDER BY a.APaterno, a.AMaterno`
+
+    const completaron = await executeQuery(completaronQuery, completaronParams)
+
+    let faltantesQuery = `
+      SELECT a.NumControl AS numControl, a.NombreCompleto AS nombre,
+             c.NombreCorto AS carrera, g.Clave AS grupo
+      FROM eval.Inscripcion i
+      JOIN dbo.Grupo g ON g.IdGrupo = i.IdGrupo AND g.IdDoce = ? AND g.IdPerio = ?
+      JOIN dbo.Alumno a ON a.NumControl = i.NumControl
+      JOIN dbo.Carrera c ON c.IdCarre = a.IdCarre
+      WHERE i.Activa = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM eval.EvaluacionDocente e
+          WHERE e.NumControl = i.NumControl AND e.IdDoce = ? AND e.IdPerio = ? AND e.Estado = 3
+        )
+    `
+    const faltantesParams = [docenteId, periodoId, docenteId, periodoId]
+    if (grupoId) {
+      faltantesQuery += ` AND g.IdGrupo = ?`
+      faltantesParams.push(grupoId)
+    }
+    faltantesQuery += ` ORDER BY a.APaterno, a.AMaterno`
+
+    const faltantes = await executeQuery(faltantesQuery, faltantesParams)
+
+    const promediosMap = {}
+    promediosCat.forEach(p => { promediosMap[p.IdCategoria] = Number(p.promedio) })
+    const valoresPromedio = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
+    const promedioGeneral = valoresPromedio.length
+      ? +(valoresPromedio.reduce((a, b) => a + b, 0) / valoresPromedio.length).toFixed(2)
+      : 0
+
+    const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
+      : promedioGeneral >= 3.5 ? "MUY BUENO"
+      : promedioGeneral >= 2.5 ? "BUENO"
+      : promedioGeneral >= 1.5 ? "REGULAR"
+      : promedioGeneral > 0 ? "DEFICIENTE"
+      : "SIN DATOS"
+
+    res.json({
+      docente: { id: docente.IdDoce, nombre: docente.nombre },
+      periodo,
+      totalAlumnos: counts?.total_alumnos ?? 0,
+      totalCompletaron: completaron.length,
+      totalFaltantes: faltantes.length,
+      completaron,
+      faltantes,
+      promediosCat: promediosMap,
+      promedioGeneral,
+      clasificacion,
+    })
+
+  } catch (err) {
+    console.error("❌ Error en /api/dashboard/resultados:", err)
+    res.status(500).json({ error: "Error interno: " + err.message })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — GET /api/dashboard/docentes/:idDocente/comentarios
 ══════════════════════════════════════════════════════════════ */
 app.get("/api/dashboard/docentes/:idDocente/comentarios", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente } = req.params
@@ -510,359 +1385,51 @@ app.get("/api/dashboard/docentes/:idDocente/comentarios", authMiddleware, soloAd
   }
 
   try {
-    const [comentarios] = await pool.query(`
+    const comentarios = await executeQuery(`
       SELECT
         ce.id_comentario,
         ce.comentario,
-        ce.fecha_creacion
-      FROM comentario_evaluacion ce
-      INNER JOIN evaluacion_docente ed
-        ON ed.id_evaluacion = ce.id_evaluacion
-      WHERE ce.id_doce   = ?
-        AND ed.id_perio  = ?
-        AND ce.visible   = 1
+        ce.fecha_creacion,
+        a.nombre_completo AS alumno
+      FROM eval.ComentarioEvaluacion ce
+      INNER JOIN eval.EvaluacionDocente ed ON ed.id_evaluacion = ce.id_evaluacion
+      INNER JOIN dbo.Alumno a ON a.num_control = ce.num_control
+      WHERE ce.id_doce = ?
+        AND ed.id_perio = ?
+        AND ce.visible = 1
         AND ce.comentario IS NOT NULL
-        AND TRIM(ce.comentario) != ''
+        AND LTRIM(RTRIM(ce.comentario)) != ''
       ORDER BY ce.fecha_creacion DESC
     `, [docenteId, periodoId])
 
-    return res.json({
+    res.json({
       idDocente: docenteId,
       idPeriodo: periodoId,
-      total:      comentarios.length,
+      total: comentarios.length,
       comentarios,
     })
-
   } catch (err) {
-    console.error("❌ Error en GET /api/dashboard/docentes/:id/comentarios:", err)
-    return res.status(500).json({ error: "Error interno: " + err.message })
-  }
-})
-
-/* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/resultados
-══════════════════════════════════════════════════════════════ */
-app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
-  const { idDocente, idPeriodo, idGrupo } = req.query
-  if (!idDocente || !idPeriodo) return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
-
-  try {
-    const docenteId = parseInt(idDocente)
-    const periodoId = parseInt(idPeriodo)
-    if (isNaN(docenteId) || isNaN(periodoId)) return res.status(400).json({ error: "IDs inválidos" })
-
-    const grupoId = idGrupo ? parseInt(idGrupo) : null
-
-    // 1. Docente
-    const [[docente]] = await pool.query(
-      `SELECT id_doce, CONCAT(grado, ' ', nombre, ' ', apellidos) AS nombre FROM docente WHERE id_doce = ?`,
-      [docenteId]
-    )
-    if (!docente) return res.status(404).json({ error: "Docente no encontrado." })
-
-    // 2. Periodo
-    const [[periodo]] = await pool.query(
-      `SELECT id_perio, nombre FROM periodo_escolar WHERE id_perio = ?`, [periodoId]
-    )
-
-    // 3. Promedios por categoría
-    const promediosCatQuery = grupoId ? `
-      SELECT c.id_categoria, c.nombre,
-             COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
-      FROM categoria c
-      LEFT JOIN pregunta p ON p.id_categoria = c.id_categoria
-        AND p.id_encuesta = (SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1)
-      LEFT JOIN respuesta_evaluacion r ON r.id_pregunta = p.id_pregunta
-      LEFT JOIN evaluacion_docente e ON e.id_evaluacion = r.id_evaluacion
-        AND e.id_doce = ? AND e.id_perio = ? AND e.id_grupo = ? AND e.estado = 3
-      GROUP BY c.id_categoria, c.nombre
-      ORDER BY c.id_categoria
-    ` : `
-      SELECT c.id_categoria, c.nombre,
-             COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
-      FROM categoria c
-      LEFT JOIN pregunta p ON p.id_categoria = c.id_categoria
-        AND p.id_encuesta = (SELECT id_encuesta FROM encuesta WHERE id_tipo_encuesta = 2 AND activa = 1 LIMIT 1)
-      LEFT JOIN respuesta_evaluacion r ON r.id_pregunta = p.id_pregunta
-      LEFT JOIN evaluacion_docente e ON e.id_evaluacion = r.id_evaluacion
-        AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
-      GROUP BY c.id_categoria, c.nombre
-      ORDER BY c.id_categoria
-    `
-    const promediosCatParams = grupoId ? [docenteId, periodoId, grupoId] : [docenteId, periodoId]
-    const [promediosCat] = await pool.query(promediosCatQuery, promediosCatParams)
-
-    // 4. Conteos
-    const grupoJoin = grupoId ? `AND g.id_grupo = ${grupoId}` : ""
-    const [[counts]] = await pool.query(`
-      SELECT
-        COUNT(DISTINCT i.num_control) AS total_alumnos,
-        COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END) AS completaron
-      FROM inscripcion i
-      JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ? ${grupoJoin}
-      LEFT JOIN evaluacion_docente e ON e.num_control = i.num_control
-        AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3 ${grupoId ? `AND e.id_grupo = ${grupoId}` : ""}
-      WHERE i.activa = 1
-    `, [docenteId, periodoId, docenteId, periodoId])
-
-    // 5. Alumnos que completaron
-    const completaronQuery = grupoId ? `
-      SELECT a.num_control AS numControl, a.nombre_completo AS nombre,
-             c.nombre_corto AS carrera, g.clave AS grupo
-      FROM evaluacion_docente e
-      JOIN alumno a ON a.num_control = e.num_control
-      JOIN carrera c ON c.id_carre = a.id_carre
-      JOIN grupo g ON g.id_grupo = e.id_grupo
-      WHERE e.id_doce = ? AND e.id_perio = ? AND e.id_grupo = ? AND e.estado = 3
-      ORDER BY a.a_paterno, a.a_materno
-    ` : `
-      SELECT a.num_control AS numControl, a.nombre_completo AS nombre,
-             c.nombre_corto AS carrera, g.clave AS grupo
-      FROM evaluacion_docente e
-      JOIN alumno a ON a.num_control = e.num_control
-      JOIN carrera c ON c.id_carre = a.id_carre
-      JOIN grupo g ON g.id_grupo = e.id_grupo
-      WHERE e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
-      ORDER BY a.a_paterno, a.a_materno
-    `
-    const completaronParams = grupoId ? [docenteId, periodoId, grupoId] : [docenteId, periodoId]
-    const [completaron] = await pool.query(completaronQuery, completaronParams)
-
-    // 6. Alumnos pendientes
-    const faltantesQuery = grupoId ? `
-      SELECT a.num_control AS numControl, a.nombre_completo AS nombre,
-             c.nombre_corto AS carrera, g.clave AS grupo
-      FROM inscripcion i
-      JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ? AND g.id_grupo = ?
-      JOIN alumno a ON a.num_control = i.num_control
-      JOIN carrera c ON c.id_carre = a.id_carre
-      WHERE i.activa = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM evaluacion_docente e
-          WHERE e.num_control = i.num_control AND e.id_doce = ? AND e.id_perio = ? AND e.id_grupo = ? AND e.estado = 3
-        )
-      ORDER BY a.a_paterno, a.a_materno
-    ` : `
-      SELECT a.num_control AS numControl, a.nombre_completo AS nombre,
-             c.nombre_corto AS carrera, g.clave AS grupo
-      FROM inscripcion i
-      JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
-      JOIN alumno a ON a.num_control = i.num_control
-      JOIN carrera c ON c.id_carre = a.id_carre
-      WHERE i.activa = 1
-        AND NOT EXISTS (
-          SELECT 1 FROM evaluacion_docente e
-          WHERE e.num_control = i.num_control AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
-        )
-      ORDER BY a.a_paterno, a.a_materno
-    `
-    const faltantesParams = grupoId
-      ? [docenteId, periodoId, grupoId, docenteId, periodoId, grupoId]
-      : [docenteId, periodoId, docenteId, periodoId]
-    const [faltantes] = await pool.query(faltantesQuery, faltantesParams)
-
-    // 7. Promedio general y clasificación
-    const promediosMap = {}
-    promediosCat.forEach(p => { promediosMap[p.id_categoria] = Number(p.promedio) })
-    const valoresPromedio = promediosCat.map(p => Number(p.promedio)).filter(v => v > 0)
-    const promedioGeneral = valoresPromedio.length
-      ? +(valoresPromedio.reduce((a, b) => a + b, 0) / valoresPromedio.length).toFixed(2)
-      : 0
-    const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
-      : promedioGeneral >= 3.5 ? "MUY BUENO"
-      : promedioGeneral >= 2.5 ? "BUENO"
-      : promedioGeneral >= 1.5 ? "REGULAR"
-      : promedioGeneral > 0 ? "DEFICIENTE"
-      : "SIN DATOS"
-
-    return res.json({
-      docente, periodo,
-      totalAlumnos: counts?.total_alumnos ?? 0,
-      totalCompletaron: completaron.length,
-      totalFaltantes: faltantes.length,
-      completaron, faltantes,
-      promediosCat: promediosMap,
-      promedioGeneral, clasificacion,
-    })
-  } catch (err) {
-    console.error("❌ Error en /api/dashboard/resultados:", err)
-    return res.status(500).json({ error: "Error interno: " + err.message })
-  }
-})
-
-/* ══════════════════════════════════════════════════════════════
-   DASHBOARD — GET /api/dashboard/departamentos
-══════════════════════════════════════════════════════════════ */
-app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, res) => {
-  const { idPeriodo } = req.query
-  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido." })
-
-  const periodoId = parseInt(idPeriodo)
-  if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido." })
-
-  try {
-    const [deptos] = await pool.query(`
-      SELECT DISTINCT
-        dep.id_depa,
-        dep.nombre AS nombre_depa
-      FROM departamento dep
-      INNER JOIN docente d ON d.id_depa = dep.id_depa AND d.vigente = 1
-      INNER JOIN grupo g   ON g.id_doce = d.id_doce AND g.id_perio = ?
-      ORDER BY dep.nombre
-    `, [periodoId])
-
-    if (!deptos.length) return res.json({ departamentos: [] })
-
-    const resultado = []
-
-    for (const depto of deptos) {
-      const [docentesDepto] = await pool.query(`
-        SELECT DISTINCT
-          d.id_doce AS id,
-          CONCAT(d.grado, ' ', d.nombre, ' ', d.apellidos) AS nombre,
-          d.apellidos AS _sort
-        FROM docente d
-        INNER JOIN grupo g ON g.id_doce = d.id_doce AND g.id_perio = ?
-        WHERE d.id_depa = ? AND d.vigente = 1
-        ORDER BY d.apellidos
-      `, [periodoId, depto.id_depa])
-
-      const totalDocentes = docentesDepto.length
-      if (totalDocentes === 0) continue
-
-      const docenteIds = docentesDepto.map(d => d.id)
-
-      const [[alumnosCounts]] = await pool.query(`
-        SELECT
-          COUNT(DISTINCT i.num_control) AS total_alumnos,
-          COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END) AS alumnos_completaron
-        FROM inscripcion i
-        JOIN grupo g ON g.id_grupo = i.id_grupo
-          AND g.id_doce IN (${docenteIds.map(() => '?').join(',')})
-          AND g.id_perio = ?
-        LEFT JOIN evaluacion_docente e ON e.num_control = i.num_control
-          AND e.id_doce = g.id_doce
-          AND e.id_perio = ?
-          AND e.estado = 3
-        WHERE i.activa = 1
-      `, [...docenteIds, periodoId, periodoId])
-
-      const totalAlumnos       = alumnosCounts.total_alumnos ?? 0
-      const alumnosCompletaron = alumnosCounts.alumnos_completaron ?? 0
-      const participacion      = totalAlumnos > 0
-        ? parseFloat(((alumnosCompletaron / totalAlumnos) * 100).toFixed(1))
-        : 0
-
-      const [[evCounts]] = await pool.query(`
-        SELECT COUNT(DISTINCT id_doce) AS evaluados
-        FROM evaluacion_docente
-        WHERE id_doce IN (${docenteIds.map(() => '?').join(',')})
-          AND id_perio = ?
-          AND estado = 3
-      `, [...docenteIds, periodoId])
-
-      const docentesEvaluados = evCounts.evaluados ?? 0
-
-      const [promediosDocentes] = await pool.query(`
-        SELECT
-          e.id_doce,
-          ROUND(AVG(r.calificacion), 2) AS promedio
-        FROM evaluacion_docente e
-        JOIN respuesta_evaluacion r ON r.id_evaluacion = e.id_evaluacion
-        WHERE e.id_doce IN (${docenteIds.map(() => '?').join(',')})
-          AND e.id_perio = ?
-          AND e.estado = 3
-        GROUP BY e.id_doce
-      `, [...docenteIds, periodoId])
-
-      const promedioGeneral = promediosDocentes.length
-        ? parseFloat((promediosDocentes.reduce((s, d) => s + Number(d.promedio), 0) / promediosDocentes.length).toFixed(2))
-        : 0
-
-      const clasificacion = promedioGeneral >= 4.5 ? "EXCELENTE"
-        : promedioGeneral >= 3.5 ? "MUY BUENO"
-        : promedioGeneral >= 2.5 ? "BUENO"
-        : promedioGeneral >= 1.5 ? "REGULAR"
-        : promedioGeneral > 0    ? "DEFICIENTE"
-        : "SIN DATOS"
-
-      const docentesConStats = await Promise.all(docentesDepto.map(async (doc) => {
-        const [[docProm]] = await pool.query(`
-          SELECT COALESCE(ROUND(AVG(r.calificacion), 2), 0) AS promedio
-          FROM evaluacion_docente e
-          JOIN respuesta_evaluacion r ON r.id_evaluacion = e.id_evaluacion
-          WHERE e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
-        `, [doc.id, periodoId])
-
-        const [[docAlumnos]] = await pool.query(`
-          SELECT
-            COUNT(DISTINCT i.num_control)                                         AS total,
-            COUNT(DISTINCT CASE WHEN e.estado = 3 THEN e.num_control END)         AS completaron
-          FROM inscripcion i
-          JOIN grupo g ON g.id_grupo = i.id_grupo AND g.id_doce = ? AND g.id_perio = ?
-          LEFT JOIN evaluacion_docente e ON e.num_control = i.num_control
-            AND e.id_doce = ? AND e.id_perio = ? AND e.estado = 3
-          WHERE i.activa = 1
-        `, [doc.id, periodoId, doc.id, periodoId])
-
-        const promedio = Number(docProm.promedio)
-        const docClasif = promedio >= 4.5 ? "EXCELENTE"
-          : promedio >= 3.5 ? "MUY BUENO"
-          : promedio >= 2.5 ? "BUENO"
-          : promedio >= 1.5 ? "REGULAR"
-          : promedio > 0    ? "DEFICIENTE"
-          : "SIN DATOS"
-
-        return {
-          id:                 doc.id,
-          nombre:             doc.nombre,
-          promedio,
-          clasificacion:      docClasif,
-          totalAlumnos:       docAlumnos.total ?? 0,
-          alumnosCompletaron: docAlumnos.completaron ?? 0,
-        }
-      }))
-
-      resultado.push({
-        nombre:               depto.nombre_depa,
-        totalDocentes,
-        docentesEvaluados,
-        promedioGeneral,
-        participacionAlumnos: participacion,
-        clasificacion,
-        docentes:             docentesConStats,
-      })
-    }
-
-    resultado.sort((a, b) => b.promedioGeneral - a.promedioGeneral)
-    return res.json({ departamentos: resultado })
-
-  } catch (err) {
-    console.error("❌ Error en /api/dashboard/departamentos:", err)
-    return res.status(500).json({ error: "Error interno: " + err.message })
+    console.error("❌ Error en /api/dashboard/docentes/:id/comentarios:", err)
+    res.status(500).json({ error: "Error interno: " + err.message })
   }
 })
 
 /* ══════════════════════════════════════════════════════════════
    ARRANCAR SERVIDOR
 ══════════════════════════════════════════════════════════════ */
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log("=======================================")
   console.log("🚀 SICOT API CORRIENDO")
   console.log("=======================================")
-  console.log(`🌐 Puerto: ${PORT} (0.0.0.0)`)
+  console.log(`🌐 Puerto: ${PORT}`)
   console.log(`📡 Entorno: ${process.env.NODE_ENV || 'development'}`)
-  console.log(`🗄️  Base de datos: ${dbCfg.host}:${dbCfg.port} / ${dbCfg.database}`)
+  console.log(`🗄️  Base de datos: ${dbConfig.server}/${dbConfig.database}`)
   console.log("=======================================")
-  console.log("✅ Endpoints disponibles:")
-  console.log(`   📊 Health:                    /health`)
-  console.log(`   🔧 DB Test:                   /api/db-test`)
-  console.log(`   🔐 Login:                     /api/auth/login`)
-  console.log(`   💬 Guardar comentario:        POST /api/evaluacion/comentario  ← NUEVO`)
-  console.log(`   📋 Docentes:                  /api/dashboard/docentes`)
-  console.log(`   📋 Periodos:                  /api/dashboard/periodos`)
-  console.log(`   📋 Resultados docente:        /api/dashboard/resultados`)
-  console.log(`   🏢 Departamentos:             /api/dashboard/departamentos`)
-  console.log(`   💬 Comentarios por docente:   /api/dashboard/docentes/:id/comentarios  ← NUEVO`)
-  console.log("=======================================")
+  
+  try {
+    await getConnection()
+    console.log("✅ Conexión a Azure SQL establecida")
+  } catch (err) {
+    console.error("⚠️ No se pudo conectar a Azure SQL:", err.message)
+  }
 })

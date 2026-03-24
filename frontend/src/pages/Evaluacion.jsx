@@ -1,6 +1,6 @@
 /**
  * Evaluacion.jsx — VERSIÓN CON COMENTARIOS Y CARRERA
- * 
+ *
  * Cambios realizados:
  * 1. ✅ Nuevo estado "comentario" en la máquina de estados
  * 2. ✅ Muestra formulario de comentarios después de responder todas las preguntas
@@ -9,10 +9,10 @@
  * 5. ✅ Mantiene toda la lógica de UI y experiencia anterior
  */
 
-import { useState, useEffect, useRef } from "react"
-import { useNavigate, useLocation, useParams } from "react-router-dom"
-import { useAuth } from "../context/AuthContext"
-import Comentario from "./Comentario"
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import Comentario from "./Comentario";
 import {
   getPreguntasAPI,
   iniciarEvaluacionAPI,
@@ -21,61 +21,104 @@ import {
   getPerfilAlumnoAPI,
   CATEGORIAS,
   RUBRICA,
-} from "../services/evaluacionData"
+} from "../services/evaluacionData";
 
 /* ── Opciones Likert ────────────────────────────────────────── */
 const OPCIONES = [
-  { valor: 5, label: "Excelente",  color: "#15803d", bg: "#f0fdf4", border: "#86efac" },
-  { valor: 4, label: "Muy bueno",  color: "#0369a1", bg: "#f0f9ff", border: "#7dd3fc" },
-  { valor: 3, label: "Bueno",      color: "#b45309", bg: "#fffbeb", border: "#fcd34d" },
-  { valor: 2, label: "Regular",    color: "#c2410c", bg: "#fff7ed", border: "#fdba74" },
-  { valor: 1, label: "Deficiente", color: "#b91c1c", bg: "#fef2f2", border: "#fca5a5" },
-]
+  {
+    valor: 5,
+    label: "Excelente",
+    color: "#15803d",
+    bg: "#f0fdf4",
+    border: "#86efac",
+  },
+  {
+    valor: 4,
+    label: "Muy bueno",
+    color: "#0369a1",
+    bg: "#f0f9ff",
+    border: "#7dd3fc",
+  },
+  {
+    valor: 3,
+    label: "Bueno",
+    color: "#b45309",
+    bg: "#fffbeb",
+    border: "#fcd34d",
+  },
+  {
+    valor: 2,
+    label: "Regular",
+    color: "#c2410c",
+    bg: "#fff7ed",
+    border: "#fdba74",
+  },
+  {
+    valor: 1,
+    label: "Deficiente",
+    color: "#b91c1c",
+    bg: "#fef2f2",
+    border: "#fca5a5",
+  },
+];
 
 /* ── Toast de aviso ─────────────────────────────────────────── */
 function Toast({ visible }) {
   return (
-    <div style={{
-      position: "fixed", bottom: 28, left: "50%", zIndex: 300,
-      transform: `translateX(-50%) translateY(${visible ? 0 : 14}px)`,
-      opacity: visible ? 1 : 0,
-      transition: "all .25s cubic-bezier(.16,1,.3,1)",
-      pointerEvents: "none",
-      background: "#1e293b", color: "#fff",
-      borderRadius: 14, padding: "13px 24px",
-      fontSize: 14, fontWeight: 600,
-      display: "flex", alignItems: "center", gap: 10,
-      boxShadow: "0 10px 40px rgba(0,0,0,.45)",
-      whiteSpace: "nowrap",
-    }}>
+    <div
+      style={{
+        position: "fixed",
+        bottom: 28,
+        left: "50%",
+        zIndex: 300,
+        transform: `translateX(-50%) translateY(${visible ? 0 : 14}px)`,
+        opacity: visible ? 1 : 0,
+        transition: "all .25s cubic-bezier(.16,1,.3,1)",
+        pointerEvents: "none",
+        background: "#1e293b",
+        color: "#fff",
+        borderRadius: 14,
+        padding: "13px 24px",
+        fontSize: 14,
+        fontWeight: 600,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        boxShadow: "0 10px 40px rgba(0,0,0,.45)",
+        whiteSpace: "nowrap",
+      }}
+    >
       <span style={{ fontSize: 20 }}>⚠️</span>
       Selecciona una opción para poder continuar
     </div>
-  )
+  );
 }
 
 /* ══════════════════════════════════════════════════════════════
    COMPONENTE
 ══════════════════════════════════════════════════════════════ */
 export default function Evaluacion() {
-  const navigate    = useNavigate()
-  const location    = useLocation()
-  const { idGrupo } = useParams()
-  const { user }    = useAuth()
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { idGrupo } = useParams();
+  const { user } = useAuth();
 
   const tutor = location.state?.tutor ?? {
-    id: Number(idGrupo), nombre: "Tutor", materia: "", grupo: "",
-  }
-  const numControl = location.state?.numControl ?? user?.id ?? 0
-  const idGrupoReal = location.state?.idGrupo ?? idGrupo
+    id: Number(idGrupo),
+    nombre: "Tutor",
+    materia: "",
+    grupo: "",
+  };
+  const numControl = location.state?.numControl ?? user?.id ?? 0;
+  const idGrupoReal = location.state?.idGrupo ?? idGrupo;
 
   /* ── Estados para datos de la API ── */
-  const [preguntas, setPreguntas] = useState([])
-  const [idEncuesta, setIdEncuesta] = useState(null)
-  const [idEvaluacion, setIdEvaluacion] = useState(null)
-  const [alumnoInfo, setAlumnoInfo] = useState(null)
-  const [cargandoInicial, setCargandoInicial] = useState(true)
-  const [errorInicial, setErrorInicial] = useState("")
+  const [preguntas, setPreguntas] = useState([]);
+  const [idEncuesta, setIdEncuesta] = useState(null);
+  const [idEvaluacion, setIdEvaluacion] = useState(null);
+  const [alumnoInfo, setAlumnoInfo] = useState(null);
+  const [cargandoInicial, setCargandoInicial] = useState(true);
+  const [errorInicial, setErrorInicial] = useState("");
 
   /* ── Estado principal ──
      `fase` es la máquina de estados:
@@ -84,61 +127,67 @@ export default function Evaluacion() {
        "comentario"  → todas las preguntas respondidas, mostrando formulario
        "enviando"    → enviando comentario y cerrando evaluación
   ── */
-  const [pagina,           setPagina]           = useState(0)
-  const [respuestas,       setRespuestas]       = useState({})
-  const [fase,             setFase]             = useState("libre")
-  const [mostrarRubrica,   setMostrarRubrica]   = useState(false)
-  const [animKey,          setAnimKey]          = useState(0)
-  const [toastVisible,     setToastVisible]     = useState(false)
-  const [cargandoComentario, setCargandoComentario] = useState(false)
-  const [errorComentario,  setErrorComentario]  = useState(null)
+  const [pagina, setPagina] = useState(0);
+  const [respuestas, setRespuestas] = useState({});
+  const [fase, setFase] = useState("libre");
+  const [mostrarRubrica, setMostrarRubrica] = useState(false);
+  const [animKey, setAnimKey] = useState(0);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [cargandoComentario, setCargandoComentario] = useState(false);
+  const [errorComentario, setErrorComentario] = useState(null);
 
   /* Refs que no provocan re-renders */
-  const paginaRef      = useRef(0)
-  const respuestasRef  = useRef({})
-  const timerRef       = useRef(null)
-  const toastRef       = useRef(null)
+  const paginaRef = useRef(0);
+  const respuestasRef = useRef({});
+  const timerRef = useRef(null);
+  const toastRef = useRef(null);
 
   /* Mantener refs en sync */
-  useEffect(() => { paginaRef.current     = pagina    }, [pagina])
-  useEffect(() => { respuestasRef.current = respuestas }, [respuestas])
+  useEffect(() => {
+    paginaRef.current = pagina;
+  }, [pagina]);
+  useEffect(() => {
+    respuestasRef.current = respuestas;
+  }, [respuestas]);
 
   /* ── Cargar preguntas y datos del alumno desde la API al montar ── */
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        setCargandoInicial(true)
-        
+        setCargandoInicial(true);
+
         // Cargar preguntas
-        const dataPreguntas = await getPreguntasAPI()
-        setPreguntas(dataPreguntas.preguntas || [])
-        setIdEncuesta(dataPreguntas.idEncuesta)
+        const dataPreguntas = await getPreguntasAPI();
+        setPreguntas(dataPreguntas.preguntas || []);
+        setIdEncuesta(dataPreguntas.idEncuesta);
 
         // Cargar datos del alumno (nombre, carrera, etc)
-        const datosAlumno = await getPerfilAlumnoAPI(numControl)
-        setAlumnoInfo(datosAlumno)
+        const datosAlumno = await getPerfilAlumnoAPI(numControl);
+        setAlumnoInfo(datosAlumno);
 
-        // Iniciar evaluación
-        const inicio = await iniciarEvaluacionAPI(numControl, tutor.id, idGrupoReal)
-        setIdEvaluacion(inicio.idEvaluacion)
-        
+        // Verifica que tutor.id sea el ID del docente (ej: 117, 133, etc.)
+        console.log("📝 Tutor ID:", tutor.id, "Tutor nombre:", tutor.nombre);
+
+        // Al iniciar evaluación, debe pasar el ID del docente
+        const inicio = await iniciarEvaluacionAPI(tutor.id, idGrupoReal);
+        setIdEvaluacion(inicio.idEvaluacion);
       } catch (error) {
-        console.error("Error al cargar evaluación:", error)
-        setErrorInicial(error.message || "Error al cargar la evaluación")
+        console.error("Error al cargar evaluación:", error);
+        setErrorInicial(error.message || "Error al cargar la evaluación");
       } finally {
-        setCargandoInicial(false)
+        setCargandoInicial(false);
       }
-    }
+    };
 
     if (tutor.id && numControl && idGrupoReal) {
-      cargarDatos()
+      cargarDatos();
     }
 
     return () => {
-      clearTimeout(timerRef.current)
-      clearTimeout(toastRef.current)
-    }
-  }, []) // eslint-disable-line
+      clearTimeout(timerRef.current);
+      clearTimeout(toastRef.current);
+    };
+  }, []); // eslint-disable-line
 
   /* ─────────────────────────────────────────────────────────────
      MÁQUINA DE ESTADOS
@@ -148,27 +197,27 @@ export default function Evaluacion() {
   ───────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (fase === "transitando") {
-      clearTimeout(timerRef.current)
+      clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        const siguiente = paginaRef.current + 1
-        
+        const siguiente = paginaRef.current + 1;
+
         // Si es la última pregunta, ir a comentarios
         if (siguiente >= preguntas.length) {
-          setFase("comentario")
+          setFase("comentario");
         } else {
           // Si no, avanzar a la siguiente
-          paginaRef.current = siguiente
-          setPagina(siguiente)
-          setAnimKey(k => k + 1)
-          setMostrarRubrica(false)
-          setFase("libre")
-          window.scrollTo({ top: 0, behavior: "smooth" })
+          paginaRef.current = siguiente;
+          setPagina(siguiente);
+          setAnimKey((k) => k + 1);
+          setMostrarRubrica(false);
+          setFase("libre");
+          window.scrollTo({ top: 0, behavior: "smooth" });
         }
-      }, 700)
+      }, 700);
     }
 
     if (fase === "enviando") {
-      clearTimeout(timerRef.current)
+      clearTimeout(timerRef.current);
       timerRef.current = setTimeout(async () => {
         try {
           // Preparar respuestas para la API
@@ -176,172 +225,212 @@ export default function Evaluacion() {
             ([idPregunta, calificacion]) => ({
               idPregunta: Number(idPregunta),
               calificacion,
-            })
-          )
+            }),
+          );
 
           // Enviar respuestas a la API
-          const resultado = await guardarRespuestasAPI(idEvaluacion, respuestasArray)
-          
+          const resultado = await guardarRespuestasAPI(
+            idEvaluacion,
+            respuestasArray,
+          );
+
           if (resultado.success) {
-            navigate("/gracias", { 
-              replace: true, 
-              state: { 
-                tutor, 
+            navigate("/gracias", {
+              replace: true,
+              state: {
+                tutor,
                 totalPreguntas: preguntas.length,
-                carrera: alumnoInfo?.carrera || "Carrera"
-              } 
-            })
+                carrera: alumnoInfo?.carrera || "Carrera",
+              },
+            });
           } else {
-            console.error("Error al guardar:", resultado.error)
-            setFase("comentario")
+            console.error("Error al guardar:", resultado.error);
+            setFase("comentario");
           }
         } catch (error) {
-          console.error("Error en envío:", error)
-          setFase("comentario")
+          console.error("Error en envío:", error);
+          setFase("comentario");
         }
-      }, 1100)
+      }, 1100);
     }
-  }, [fase, idEvaluacion, navigate, preguntas.length, tutor, alumnoInfo])
+  }, [fase, idEvaluacion, navigate, preguntas.length, tutor, alumnoInfo]);
 
   /* ── Derivados del render actual ── */
-  const pregActual   = preguntas[pagina]
-  const cat          = CATEGORIAS.find(c => c.id === pregActual?.idCategoria)
-  const rubrica      = RUBRICA[pregActual?.idCategoria] ?? {}
-  const respActual   = respuestas[pregActual?.id]
-  const respondidas  = Object.keys(respuestas).length
-  const progPct      = preguntas.length ? Math.round((pagina / preguntas.length) * 100) : 0
-  const esUltima     = pagina === preguntas.length - 1
-  const estaLibre    = fase === "libre"
-  const TOTAL        = preguntas.length
+  const pregActual = preguntas[pagina];
+  const cat = CATEGORIAS.find((c) => c.id === pregActual?.idCategoria);
+  const rubrica = RUBRICA[pregActual?.idCategoria] ?? {};
+  const respActual = respuestas[pregActual?.id];
+  const respondidas = Object.keys(respuestas).length;
+  const progPct = preguntas.length
+    ? Math.round((pagina / preguntas.length) * 100)
+    : 0;
+  const esUltima = pagina === preguntas.length - 1;
+  const estaLibre = fase === "libre";
+  const TOTAL = preguntas.length;
 
   /* ── Toast ── */
   const mostrarToast = () => {
-    setToastVisible(true)
-    clearTimeout(toastRef.current)
-    toastRef.current = setTimeout(() => setToastVisible(false), 2500)
-  }
+    setToastVisible(true);
+    clearTimeout(toastRef.current);
+    toastRef.current = setTimeout(() => setToastVisible(false), 2500);
+  };
 
   /* ── Seleccionar opción ──────────────────────────────────── */
   const seleccionar = (valor) => {
     if (!estaLibre) {
-      if (respActual !== undefined) mostrarToast()
-      return
+      if (respActual !== undefined) mostrarToast();
+      return;
     }
 
-    const nuevas = { ...respuestasRef.current, [pregActual.id]: valor }
-    respuestasRef.current = nuevas
-    setRespuestas(nuevas)
+    const nuevas = { ...respuestasRef.current, [pregActual.id]: valor };
+    respuestasRef.current = nuevas;
+    setRespuestas(nuevas);
 
-    setFase(esUltima ? "transitando" : "transitando")
-  }
+    setFase(esUltima ? "transitando" : "transitando");
+  };
 
   /* ── Manejar envío de comentario ──────────────────────────── */
+  // En Evaluacion.jsx
+  /* ── Manejar envío de comentario ──────────────────────────── */
   const handleEnviarComentario = async (comentarioTexto) => {
-    setCargandoComentario(true)
-    setErrorComentario(null)
+    setCargandoComentario(true);
+    setErrorComentario(null);
 
     try {
-      // Si hay comentario, guardarlo
-      if (comentarioTexto && comentarioTexto.trim().length > 0) {
-        const resultado = await guardarComentarioAPI(
-          idEvaluacion,
-          numControl,
-          tutor.id,
-          comentarioTexto
-        )
+      // Asegurar que comentarioTexto es string
+      const texto = String(comentarioTexto).trim();
 
-        if (!resultado.success) {
-          setErrorComentario(resultado.error || "Error al guardar el comentario")
-          setCargandoComentario(false)
-          return
-        }
+      console.log("📝 Enviando comentario:", texto);
+
+      if (!texto) {
+        throw new Error("El comentario no puede estar vacío");
       }
 
-      // Enviar respuestas
+      if (texto.length < 10) {
+        throw new Error("El comentario debe tener al menos 10 caracteres");
+      }
+
+      // PRIMERO: Guardar las respuestas de la evaluación
+      console.log("💾 Guardando respuestas de la evaluación...");
+
       const respuestasArray = Object.entries(respuestasRef.current).map(
         ([idPregunta, calificacion]) => ({
           idPregunta: Number(idPregunta),
-          calificacion,
-        })
-      )
+          calificacion: Number(calificacion),
+        }),
+      );
 
-      const resultado = await guardarRespuestasAPI(idEvaluacion, respuestasArray)
+      console.log("📊 Respuestas a guardar:", respuestasArray);
 
-      if (resultado.success) {
-        navigate("/gracias", {
-          replace: true,
-          state: { 
-            tutor, 
-            totalPreguntas: preguntas.length,
-            carrera: alumnoInfo?.carrera || "Carrera"
-          }
-        })
-      } else {
-        setErrorComentario(resultado.error || "Error al guardar la evaluación")
-        setCargandoComentario(false)
+      const resultadoRespuestas = await guardarRespuestasAPI(
+        idEvaluacion,
+        respuestasArray,
+      );
+
+      console.log("📡 Resultado guardar respuestas:", resultadoRespuestas);
+
+      if (!resultadoRespuestas.success) {
+        throw new Error(
+          resultadoRespuestas.error || "Error al guardar las respuestas",
+        );
       }
-    } catch (error) {
-      console.error("Error:", error)
-      setErrorComentario(error.message || "Error inesperado")
-      setCargandoComentario(false)
-    }
-  }
 
+      // SEGUNDO: Guardar el comentario
+      console.log("💬 Guardando comentario...");
+
+      const resultadoComentario = await guardarComentarioAPI(
+        idEvaluacion,
+        tutor.id,
+        texto,
+      );
+
+      console.log("📡 Resultado guardar comentario:", resultadoComentario);
+
+      if (!resultadoComentario.success) {
+        throw new Error(
+          resultadoComentario.error || "Error al guardar el comentario",
+        );
+      }
+
+      // TERCERO: Navegar a la página de gracias
+      navigate("/gracias", {
+        replace: true,
+        state: {
+          tutor,
+          totalPreguntas: preguntas.length,
+          carrera: alumnoInfo?.carrera || "Carrera",
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error en handleEnviarComentario:", error);
+      setErrorComentario(error.message || "Error inesperado");
+      setCargandoComentario(false);
+    }
+  };
   /* ── Loading inicial ── */
   if (cargandoInicial) {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%)'
-      }}>
-        <div style={{
-          width: '60px',
-          height: '60px',
-          border: '5px solid rgba(255,255,255,0.2)',
-          borderTopColor: '#fff',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-          marginBottom: '20px'
-        }} />
-        <p style={{ color: '#fff', fontSize: '16px' }}>Cargando evaluación...</p>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          background:
+            "linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%)",
+        }}
+      >
+        <div
+          style={{
+            width: "60px",
+            height: "60px",
+            border: "5px solid rgba(255,255,255,0.2)",
+            borderTopColor: "#fff",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+            marginBottom: "20px",
+          }}
+        />
+        <p style={{ color: "#fff", fontSize: "16px" }}>
+          Cargando evaluación...
+        </p>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
-    )
+    );
   }
 
   /* ── Error inicial ── */
   if (errorInicial) {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        padding: '20px',
-        textAlign: 'center'
-      }}>
-        <h2 style={{ color: '#b91c1c', marginBottom: '16px' }}>Error</h2>
-        <p style={{ marginBottom: '24px' }}>{errorInicial}</p>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          padding: "20px",
+          textAlign: "center",
+        }}
+      >
+        <h2 style={{ color: "#b91c1c", marginBottom: "16px" }}>Error</h2>
+        <p style={{ marginBottom: "24px" }}>{errorInicial}</p>
         <button
           onClick={() => navigate("/panel-alumno")}
           style={{
-            padding: '12px 24px',
-            background: '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer'
+            padding: "12px 24px",
+            background: "#2563eb",
+            color: "#fff",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
           }}
         >
           Volver al panel
         </button>
       </div>
-    )
+    );
   }
 
   /* ── Mostrar formulario de comentarios ── */
@@ -349,7 +438,11 @@ export default function Evaluacion() {
     return (
       <>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
         <link
           href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap"
           rel="stylesheet"
@@ -430,19 +523,24 @@ export default function Evaluacion() {
         <div className="com-page">
           {/* Navbar */}
           <nav className="com-nav">
-            <button className="com-back" onClick={() => navigate("/panel-alumno")}>
+            <button
+              className="com-back"
+              onClick={() => navigate("/panel-alumno")}
+            >
               ← Volver
             </button>
             <p className="com-nav-title">{tutor.nombre}</p>
-            <span style={{
-              fontSize: '13px',
-              fontWeight: '700',
-              color: 'rgba(255,255,255,.82)',
-              background: 'rgba(255,255,255,.12)',
-              borderRadius: '8px',
-              padding: '5px 12px',
-              whiteSpace: 'nowrap'
-            }}>
+            <span
+              style={{
+                fontSize: "13px",
+                fontWeight: "700",
+                color: "rgba(255,255,255,.82)",
+                background: "rgba(255,255,255,.12)",
+                borderRadius: "8px",
+                padding: "5px 12px",
+                whiteSpace: "nowrap",
+              }}
+            >
               {respondidas}/{TOTAL} preguntas
             </span>
           </nav>
@@ -460,19 +558,24 @@ export default function Evaluacion() {
           </div>
         </div>
       </>
-    )
+    );
   }
 
-  if (!pregActual) return null
+  if (!pregActual) return null;
 
-  const inicial = tutor.nombre
-    .replace(/^(Dr\.|Dra\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "")
-    .trim()[0] ?? "T"
+  const inicial =
+    tutor.nombre
+      .replace(/^(Dr\.|Dra\.|M\.C\.|Ing\.|Mtra?\.|Lic\.)?\s*/i, "")
+      .trim()[0] ?? "T";
 
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossOrigin="anonymous"
+      />
       <link
         href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap"
         rel="stylesheet"
@@ -580,12 +683,15 @@ export default function Evaluacion() {
       <Toast visible={toastVisible} />
 
       <div className="ev-root">
-
         {/* Navbar */}
         <nav className="ev-nav">
-          <button className="ev-back" onClick={() => navigate("/panel-alumno")}>← Volver</button>
+          <button className="ev-back" onClick={() => navigate("/panel-alumno")}>
+            ← Volver
+          </button>
           <p className="ev-nav-mid">{tutor.nombre}</p>
-          <span className="ev-nav-num">{pagina + 1} / {TOTAL}</span>
+          <span className="ev-nav-num">
+            {pagina + 1} / {TOTAL}
+          </span>
         </nav>
 
         {/* Barra de progreso */}
@@ -595,7 +701,6 @@ export default function Evaluacion() {
 
         <div className="ev-body">
           <div className="ev-wrap">
-
             {/* Tutor */}
             <div className="ev-tcard">
               <div className="ev-tav">{inicial}</div>
@@ -603,9 +708,13 @@ export default function Evaluacion() {
                 <p className="ev-tname">{tutor.nombre}</p>
                 <p className="ev-tmat">{tutor.materia}</p>
                 <div className="ev-ttags">
-                  {tutor.grupo && <span className="ev-ttag">{tutor.grupo}</span>}
+                  {tutor.grupo && (
+                    <span className="ev-ttag">{tutor.grupo}</span>
+                  )}
                   <span className="ev-ttag">Encuesta de tutoría</span>
-                  <span className="ev-ttag ev-ttag-g">{respondidas}/{TOTAL} respondidas</span>
+                  <span className="ev-ttag ev-ttag-g">
+                    {respondidas}/{TOTAL} respondidas
+                  </span>
                 </div>
               </div>
             </div>
@@ -613,20 +722,28 @@ export default function Evaluacion() {
             {/* Mapa de dots */}
             <div className="ev-dots">
               {preguntas.map((p, i) => {
-                const estado = i === pagina ? "ev-d-c"
-                             : respuestas[p.id] !== undefined ? "ev-d-a"
-                             : "ev-d-e"
+                const estado =
+                  i === pagina
+                    ? "ev-d-c"
+                    : respuestas[p.id] !== undefined
+                      ? "ev-d-a"
+                      : "ev-d-e";
                 return (
-                  <div key={p.id} className={`ev-d ${estado}`} title={`Pregunta ${i + 1}`}>
-                    {respuestas[p.id] !== undefined && i !== pagina ? "✓" : i + 1}
+                  <div
+                    key={p.id}
+                    className={`ev-d ${estado}`}
+                    title={`Pregunta ${i + 1}`}
+                  >
+                    {respuestas[p.id] !== undefined && i !== pagina
+                      ? "✓"
+                      : i + 1}
                   </div>
-                )
+                );
               })}
             </div>
 
             {/* Card de pregunta */}
             <div key={animKey} className="ev-card">
-
               {/* Categoría */}
               <div className="ev-catrow">
                 <div className="ev-catpill">
@@ -635,7 +752,7 @@ export default function Evaluacion() {
                 </div>
                 <button
                   className="ev-rtoggle"
-                  onClick={() => setMostrarRubrica(v => !v)}
+                  onClick={() => setMostrarRubrica((v) => !v)}
                   title="Ver rúbrica de evaluación"
                 >
                   {mostrarRubrica ? "✕" : "ℹ"}
@@ -646,7 +763,7 @@ export default function Evaluacion() {
               {mostrarRubrica && (
                 <div className="ev-rub">
                   <p className="ev-rubtitle">Rúbrica — {cat?.nombre}</p>
-                  {[5, 4, 3, 2, 1].map(v => (
+                  {[5, 4, 3, 2, 1].map((v) => (
                     <div className="ev-rubrow" key={v}>
                       <span className="ev-rubval">{v}</span>
                       <span className="ev-rubtxt">{rubrica[v]}</span>
@@ -660,17 +777,23 @@ export default function Evaluacion() {
 
               {/* Opciones */}
               <div className="ev-opts">
-                {OPCIONES.map(op => {
-                  const sel = respActual === op.valor
+                {OPCIONES.map((op) => {
+                  const sel = respActual === op.valor;
                   return (
                     <div
                       key={op.valor}
                       className={[
                         "ev-opt",
-                        sel        ? "ev-opt-sel"   : "",
-                        estaLibre  ? "ev-opt-libre" : "ev-opt-lock",
-                      ].filter(Boolean).join(" ")}
-                      style={{ "--oc": op.color, "--obg": op.bg, "--ob": op.border }}
+                        sel ? "ev-opt-sel" : "",
+                        estaLibre ? "ev-opt-libre" : "ev-opt-lock",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={{
+                        "--oc": op.color,
+                        "--obg": op.bg,
+                        "--ob": op.border,
+                      }}
                       onClick={() => seleccionar(op.valor)}
                     >
                       <div className="ev-opnum">{op.valor}</div>
@@ -682,7 +805,7 @@ export default function Evaluacion() {
                         <p className="ev-oprub">{rubrica[op.valor]}</p>
                       </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
 
@@ -704,10 +827,9 @@ export default function Evaluacion() {
                 </div>
               )}
             </div>
-
           </div>
         </div>
       </div>
     </>
-  )
+  );
 }

@@ -1,7 +1,14 @@
 // src/pages/admin/ConfiguracionEvaluacion.jsx
 import { useState, useEffect } from "react"
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const getApiUrl = () => {
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3001'
+  }
+  return window.location.origin
+}
+const API_URL = getApiUrl()
+
 
 function getToken() {
   return localStorage.getItem('token')

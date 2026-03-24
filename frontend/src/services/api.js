@@ -10,7 +10,13 @@
  */
 
 /* ── URL base del backend ────────────────────────────────────── */
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001"
+const getBaseUrl = () => {
+  if (import.meta.env.DEV) {
+    return "http://localhost:3001"
+  }
+  return window.location.origin
+}
+const BASE_URL = getBaseUrl()
 
 /* ── Helper interno: fetch con JWT automático ────────────────── */
 async function request(method, endpoint, body = null) {

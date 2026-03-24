@@ -1,14 +1,12 @@
 /* ================================================================
    evaluacionData.js  →  src/services/evaluacionData.js
-   VERSIÓN CONECTADA A AZURE SQL - CORREGIDA CON EXPORTS
+   VERSIÓN CONECTADA A AZURE SQL - CORREGIDA SIN DUPLICADOS
    ================================================================ */
 
-//const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-// Detectar automáticamente la URL de la API
-const API_URL = import.meta.env.VITE_API_URL || 
-                (window.location.hostname === 'localhost' ? 'http://localhost:3001' : '')
+// ============================================================
+//  DETECCIÓN AUTOMÁTICA DE URL DE API
+// ============================================================
 
-// Detectar automáticamente la URL de la API
 const getApiUrl = () => {
   // En desarrollo local
   if (import.meta.env.DEV) {
@@ -335,6 +333,8 @@ export async function getPreguntasAPI() {
  */
 export async function iniciarEvaluacionAPI(idTutor, idGrupo) {
   try {
+    console.log("🚀 Iniciando evaluación con tutor:", idTutor, "grupo:", idGrupo)
+    
     const response = await fetch(`${API_URL}/api/evaluacion/iniciar`, {
       method: 'POST',
       headers: getHeaders(),
@@ -361,13 +361,9 @@ export async function iniciarEvaluacionAPI(idTutor, idGrupo) {
  * Guardar respuestas de una evaluación
  * POST /api/evaluacion/responder
  */
-/**
- * Guardar respuestas de una evaluación
- * POST /api/evaluacion/responder
- */
 export async function guardarRespuestasAPI(idEvaluacion, respuestas) {
   try {
-    console.log("💾 Guardando respuestas:", { idEvaluacion, respuestas })
+    console.log("💾 Guardando respuestas:", { idEvaluacion, respuestas: respuestas?.length })
     
     const response = await fetch(`${API_URL}/api/evaluacion/responder`, {
       method: 'POST',

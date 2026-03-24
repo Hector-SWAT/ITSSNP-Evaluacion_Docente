@@ -10,7 +10,7 @@
       "destination": "/frontend/dist/index.html"
     }
   ],
-  "buildCommand": "cd frontend && npm install --include=dev && npm run build",
+  "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "npm install && cd backend && npm install"
+  "installCommand": "cd backend && npm install"
 }

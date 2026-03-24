@@ -1,5 +1,19 @@
 {
-  "dependencies": {
-    "mssql": "^10.0.1"
+  "name": "sicot",
+  "version": "2.0.0",
+  "description": "Sistema de Evaluación Docente ITSSNP",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && node server.js",
+    "postinstall": "cd backend && npm install && cd ../frontend && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

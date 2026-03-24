@@ -1426,18 +1426,24 @@ app.get("/api/dashboard/docentes/:idDocente/comentarios", authMiddleware, soloAd
   }
 })
 
-// Al final del archivo, después de todos los endpoints, agregar:
+
+// ============================================================
+//  SERVIR FRONTEND EN PRODUCCIÓN
+// ============================================================
+
 const path = require('path')
 
-// Servir archivos estáticos del frontend en producción
 if (process.env.NODE_ENV === 'production') {
   // Servir archivos estáticos del frontend
-  app.use(express.static(path.join(__dirname, '../frontend/dist')))
+  const frontendPath = path.join(__dirname, '../frontend/dist')
+  console.log(`📁 Sirviendo frontend desde: ${frontendPath}`)
+  
+  app.use(express.static(frontendPath))
   
   // Para cualquier ruta que no sea API, servir index.html
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, '../frontend/dist/index.html'))
+      res.sendFile(path.join(frontendPath, 'index.html'))
     }
   })
 }

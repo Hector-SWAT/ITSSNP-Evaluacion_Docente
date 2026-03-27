@@ -1,8 +1,8 @@
 /**
  * ================================================================
  *  SICOT — Backend API  (AZURE SQL)
- *  Node.js + Express + MSSQL
- *  Corregido para Vercel Serverless (sin app.listen en producción)
+ *  Node.js + Express + SQL
+ *  Versión segura para producción
  * ================================================================
  */
 require("dotenv").config()
@@ -16,33 +16,36 @@ const path = require("path")
 const app = express()
 const PORT = process.env.PORT || 3001
 
-console.log("🔍 Variables de entorno cargadas:")
-console.log("   DB_HOST:", process.env.DB_HOST ? "✅" : "❌ NO DEFINIDA")
-console.log("   DB_USER:", process.env.DB_USER ? "✅" : "❌ NO DEFINIDA")
-console.log("   DB_PASSWORD:", process.env.DB_PASSWORD ? "✅" : "❌ NO DEFINIDA")
-console.log("   DB_NAME:", process.env.DB_NAME ? "✅" : "❌ NO DEFINIDA")
-console.log("   JWT_SECRET:", process.env.JWT_SECRET ? "✅" : "❌ NO DEFINIDA")
-console.log("   NODE_ENV:", process.env.NODE_ENV || "development")
+// Solo logs en desarrollo
+if (process.env.NODE_ENV !== "production") {
+  console.log("🔍 Variables de entorno cargadas:")
+  console.log("   DB_HOST:", process.env.DB_HOST ? "✅" : "❌ NO DEFINIDA")
+  console.log("   DB_USER:", process.env.DB_USER ? "✅" : "❌ NO DEFINIDA")
+  console.log("   DB_PASSWORD:", process.env.DB_PASSWORD ? "✅" : "❌ NO DEFINIDA")
+  console.log("   DB_NAME:", process.env.DB_NAME ? "✅" : "❌ NO DEFINIDA")
+  console.log("   JWT_SECRET:", process.env.JWT_SECRET ? "✅" : "❌ NO DEFINIDA")
+  console.log("   NODE_ENV:", process.env.NODE_ENV || "development")
+}
 
 /* ══════════════════════════════════════════════════════════════
    CORS
 ══════════════════════════════════════════════════════════════ */
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://itssnp-evaluacion-docente.vercel.app"
+].filter(Boolean)
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL)
+}
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      "http://localhost:5173",
-      "http://localhost:4173",
-      "https://itssnp-evaluacion-docente.vercel.app",
-      process.env.FRONTEND_URL
-    ].filter(Boolean)
-
-    // Permitir requests sin origin (Postman, curl, serverless same-origin)
     if (!origin) return callback(null, true)
-
     if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      console.log("🚫 CORS bloqueado para:", origin)
       callback(new Error("No permitido por CORS"))
     }
   },
@@ -51,10 +54,15 @@ const corsOptions = {
 }
 
 app.use(cors(corsOptions))
-app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.path}`)
-  next()
-})
+
+// Solo logs de peticiones en desarrollo
+if (process.env.NODE_ENV !== "production") {
+  app.use((req, res, next) => {
+    console.log(`📡 ${req.method} ${req.path}`)
+    next()
+  })
+}
+
 app.use(express.json())
 
 /* ══════════════════════════════════════════════════════════════
@@ -78,9 +86,11 @@ const dbConfig = {
   }
 }
 
-console.log("🔍 Configurando conexión a Azure SQL...")
-console.log(`📊 Servidor: ${dbConfig.server}:${dbConfig.port}`)
-console.log(`📊 Base de datos: ${dbConfig.database}`)
+if (process.env.NODE_ENV !== "production") {
+  console.log("Configurando conexión a Azure SQL...")
+  console.log(`Servidor: ${dbConfig.server}:${dbConfig.port}`)
+  console.log(`Base de datos: ${dbConfig.database}`)
+}
 
 let pool = null
 
@@ -88,12 +98,16 @@ async function getConnection() {
   try {
     if (!pool) {
       pool = await sql.connect(dbConfig)
-      console.log("✅ ¡CONEXIÓN EXITOSA A AZURE SQL!")
+      if (process.env.NODE_ENV !== "production") {
+        console.log("¡CONEXIÓN EXITOSA A AZURE SQL!")
+      }
     }
     return pool
   } catch (err) {
-    pool = null // reset para reintentar en la siguiente llamada
-    console.error("❌ Error conectando a Azure SQL:", err.message)
+    pool = null
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error conectando a Azure SQL:", err.message)
+    }
     throw err
   }
 }
@@ -112,7 +126,9 @@ async function executeQuery(query, params = []) {
     const result = await request.query(formattedQuery)
     return result.recordset
   } catch (err) {
-    console.error("Error en executeQuery:", err)
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en executeQuery:", err)
+    }
     throw err
   }
 }
@@ -123,47 +139,48 @@ async function executeQuerySingle(query, params = []) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   HEALTH CHECKS
+   HEALTH CHECKS (solo en desarrollo)
 ══════════════════════════════════════════════════════════════ */
-app.get("/api/ping", (req, res) => {
-  console.log("🏓 Ping recibido")
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    message: "API funcionando correctamente",
-    env: process.env.NODE_ENV
-  })
-})
-
-app.get("/api/health", async (req, res) => {
-  try {
-    let dbStatus = "disconnected"
-    let dbError = null
-    try {
-      await getConnection()
-      dbStatus = "connected"
-    } catch (err) {
-      dbError = err.message
-    }
-
+if (process.env.NODE_ENV !== "production") {
+  app.get("/api/ping", (req, res) => {
     res.json({
-      status: "healthy",
+      status: "ok",
       timestamp: new Date().toISOString(),
-      database: dbStatus,
-      dbError: dbError,
-      environment: process.env.NODE_ENV,
-      envVars: {
-        DB_HOST: !!process.env.DB_HOST,
-        DB_USER: !!process.env.DB_USER,
-        DB_PASSWORD: !!process.env.DB_PASSWORD,
-        DB_NAME: !!process.env.DB_NAME,
-        JWT_SECRET: !!process.env.JWT_SECRET
-      }
+      message: "API funcionando correctamente",
+      env: process.env.NODE_ENV
     })
-  } catch (err) {
-    res.status(500).json({ status: "error", error: err.message })
-  }
-})
+  })
+
+  app.get("/api/health", async (req, res) => {
+    try {
+      let dbStatus = "disconnected"
+      let dbError = null
+      try {
+        await getConnection()
+        dbStatus = "connected"
+      } catch (err) {
+        dbError = err.message
+      }
+
+      res.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        database: dbStatus,
+        dbError: dbError,
+        environment: process.env.NODE_ENV,
+        envVars: {
+          DB_HOST: !!process.env.DB_HOST,
+          DB_USER: !!process.env.DB_USER,
+          DB_PASSWORD: !!process.env.DB_PASSWORD,
+          DB_NAME: !!process.env.DB_NAME,
+          JWT_SECRET: !!process.env.JWT_SECRET
+        }
+      })
+    } catch (err) {
+      res.status(500).json({ status: "error", error: err.message })
+    }
+  })
+}
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() })
@@ -174,7 +191,7 @@ app.get("/api/db-test", async (req, res) => {
     const result = await executeQuery(
       "SELECT GETDATE() as time, DB_NAME() as db, SUSER_NAME() as [user]"
     )
-    res.json({ success: true, message: "✅ Conexión exitosa", result: result[0] })
+    res.json({ success: true, message: "Conexión exitosa", result: result[0] })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }
@@ -207,12 +224,12 @@ function soloAdmin(req, res, next) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   AUTH — POST /api/auth/login
+   AUTH — POST /api/auth/login (mensajes genéricos de error)
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
   const { usuario, password } = req.body
   if (!usuario || !password) {
-    return res.status(400).json({ error: "Usuario y contraseña requeridos." })
+    return res.status(400).json({ error: "Credenciales inválidas" })
   }
 
   const hashInputSHA256 = crypto.createHash("sha256").update(password).digest("hex")
@@ -227,7 +244,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (adminRow) {
       if (hashInputSHA256 !== adminRow.clave) {
-        return res.status(401).json({ error: "Contraseña incorrecta." })
+        return res.status(401).json({ error: "Credenciales inválidas" })
       }
       const token = jwt.sign(
         { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre },
@@ -244,7 +261,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     const numControl = Number(usuario.trim())
     if (!numControl) {
-      return res.status(401).json({ error: "Usuario no encontrado." })
+      return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
     const alumno = await executeQuerySingle(
@@ -253,14 +270,14 @@ app.post("/api/auth/login", async (req, res) => {
     )
 
     if (!alumno) {
-      return res.status(401).json({ error: "Número de control no encontrado." })
+      return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
     const hashInputSHA1 = crypto.createHash("sha1").update(password).digest("hex")
     const claveHex = alumno.Clave ? alumno.Clave.toString("hex") : ""
 
     if (hashInputSHA1 !== claveHex) {
-      return res.status(401).json({ error: "Contraseña incorrecta." })
+      return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
     const periodo = await executeQuerySingle(
@@ -281,8 +298,10 @@ app.post("/api/auth/login", async (req, res) => {
       token
     })
   } catch (err) {
-    console.error("❌ Error en /api/auth/login:", err)
-    return res.status(500).json({ error: "Error interno del servidor." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/auth/login:", err)
+    }
+    return res.status(500).json({ error: "Error interno del servidor" })
   }
 })
 
@@ -311,21 +330,23 @@ app.get("/api/admin/configuracion", authMiddleware, soloAdmin, async (req, res) 
 
     res.json({ periodoActivo, encuesta, periodos })
   } catch (err) {
-    console.error("Error en /api/admin/configuracion:", err)
-    res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/admin/configuracion:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
 app.post("/api/admin/activar-periodo", authMiddleware, soloAdmin, async (req, res) => {
   const { idPeriodo } = req.body
-  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido." })
+  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido" })
 
   try {
     const periodo = await executeQuerySingle(
       `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE IdPerio = ?`,
       [idPeriodo]
     )
-    if (!periodo) return res.status(404).json({ error: "Periodo no encontrado." })
+    if (!periodo) return res.status(404).json({ error: "Periodo no encontrado" })
 
     await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 0`)
     await executeQuery(
@@ -335,8 +356,10 @@ app.post("/api/admin/activar-periodo", authMiddleware, soloAdmin, async (req, re
 
     res.json({ success: true, mensaje: `Periodo ${idPeriodo} activado correctamente` })
   } catch (err) {
-    console.error("Error en /api/admin/activar-periodo:", err)
-    res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/admin/activar-periodo:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -351,7 +374,7 @@ app.post("/api/admin/configurar-evaluacion", authMiddleware, soloAdmin, async (r
     const encuesta = await executeQuerySingle(
       `SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1`
     )
-    if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa." })
+    if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa" })
 
     const convertirFecha = (f) => {
       if (!f) return null
@@ -378,8 +401,10 @@ app.post("/api/admin/configurar-evaluacion", authMiddleware, soloAdmin, async (r
 
     res.json({ success: true, mensaje: "Configuración guardada correctamente" })
   } catch (err) {
-    console.error("❌ Error:", err)
-    res.status(500).json({ error: "Error interno: " + err.message })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -398,7 +423,7 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
        WHERE a.NumControl = ?`,
       [req.user.id]
     )
-    if (!alumno) return res.status(404).json({ error: "Alumno no encontrado." })
+    if (!alumno) return res.status(404).json({ error: "Alumno no encontrado" })
 
     const periodo = await executeQuerySingle(
       `SELECT IdPerio, Nombre FROM dbo.PeriodoEscolar WHERE Situación = 1`
@@ -504,8 +529,10 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
 
     res.json(response)
   } catch (err) {
-    console.error("Error en /api/alumno/perfil:", err)
-    res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/alumno/perfil:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -538,8 +565,10 @@ app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
 
     res.json({ evaluaciones })
   } catch (err) {
-    console.error("Error en /api/alumno/evaluaciones:", err)
-    res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/alumno/evaluaciones:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -551,7 +580,7 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
     const encuesta = await executeQuerySingle(
       `SELECT IdEncuesta FROM eval.Encuesta WHERE IdTipoEncuesta = 1 AND Activa = 1`
     )
-    if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa." })
+    if (!encuesta) return res.status(404).json({ error: "No hay encuesta activa" })
 
     const preguntas = await executeQuery(
       `SELECT IdPregunta AS id, IdCategoria AS idCategoria, Texto
@@ -563,8 +592,10 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
 
     return res.json({ idEncuesta: encuesta.IdEncuesta, preguntas, totalPreguntas: preguntas.length })
   } catch (err) {
-    console.error("Error en /api/encuesta/preguntas:", err)
-    return res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/encuesta/preguntas:", err)
+    }
+    return res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -576,7 +607,7 @@ app.get("/api/encuesta/categorias", authMiddleware, async (req, res) => {
     )
     res.json({ categorias })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -588,7 +619,7 @@ app.get("/api/encuesta/rubrica", authMiddleware, async (req, res) => {
     )
     res.json({ rubrica })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -603,7 +634,7 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
   if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
 
   const { idTutor, idGrupo } = req.body
-  if (!idTutor || !idGrupo) return res.status(400).json({ error: "idTutor e idGrupo requeridos." })
+  if (!idTutor || !idGrupo) return res.status(400).json({ error: "idTutor e idGrupo requeridos" })
 
   try {
     const periodo = await executeQuerySingle(
@@ -614,14 +645,14 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
     )
 
     if (!periodo || !encuesta) {
-      return res.status(409).json({ error: "No hay encuesta o periodo activo." })
+      return res.status(409).json({ error: "No hay encuesta o periodo activo" })
     }
 
     const grupo = await executeQuerySingle(
       `SELECT IdGrupo, IdDoce FROM dbo.Grupo WHERE IdGrupo = ? AND IdDoce = ?`,
       [idGrupo, idTutor]
     )
-    if (!grupo) return res.status(400).json({ error: "El grupo no pertenece al docente." })
+    if (!grupo) return res.status(400).json({ error: "El grupo no pertenece al docente" })
 
     const existente = await executeQuerySingle(
       `SELECT IdEvaluacion, Estado FROM eval.EvaluacionDocente
@@ -629,7 +660,7 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
       [req.user.id, idTutor, periodo.IdPerio]
     )
 
-    if (existente?.Estado === 3) return res.status(409).json({ error: "Ya completaste esta evaluación." })
+    if (existente?.Estado === 3) return res.status(409).json({ error: "Ya completaste esta evaluación" })
     if (existente?.Estado === 1) {
       return res.json({ idEvaluacion: existente.IdEvaluacion, idEncuesta: encuesta.IdEncuesta, mensaje: "Evaluación ya iniciada" })
     }
@@ -645,8 +676,10 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
     const idEvaluacion = insertResult[0]?.IdEvaluacion
     return res.json({ idEvaluacion, idEncuesta: encuesta.IdEncuesta, mensaje: "Evaluación iniciada correctamente" })
   } catch (err) {
-    console.error("Error en /api/evaluacion/iniciar:", err)
-    return res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/evaluacion/iniciar:", err)
+    }
+    return res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -658,7 +691,7 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
 
   const { idEvaluacion, respuestas } = req.body
   if (!idEvaluacion || !Array.isArray(respuestas) || !respuestas.length) {
-    return res.status(400).json({ error: "Datos incompletos." })
+    return res.status(400).json({ error: "Datos incompletos" })
   }
 
   try {
@@ -666,8 +699,8 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
       `SELECT IdEvaluacion, Estado, NumControl, IdEncuesta FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?`,
       [idEvaluacion]
     )
-    if (!ev) return res.status(404).json({ error: "Evaluación no encontrada." })
-    if (ev.NumControl !== req.user.id) return res.status(403).json({ error: "No es tu evaluación." })
+    if (!ev) return res.status(404).json({ error: "Evaluación no encontrada" })
+    if (ev.NumControl !== req.user.id) return res.status(403).json({ error: "No es tu evaluación" })
 
     for (const r of respuestas) {
       await executeQuery(
@@ -697,13 +730,15 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
         `UPDATE eval.EvaluacionDocente SET Estado = 3, FechaFin = GETDATE() WHERE IdEvaluacion = ?`,
         [idEvaluacion]
       )
-      return res.json({ success: true, mensaje: "Evaluación completada correctamente." })
+      return res.json({ success: true, mensaje: "Evaluación completada correctamente" })
     }
 
-    return res.json({ success: true, mensaje: "Respuestas guardadas correctamente." })
+    return res.json({ success: true, mensaje: "Respuestas guardadas correctamente" })
   } catch (err) {
-    console.error("Error en /api/evaluacion/responder:", err)
-    return res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/evaluacion/responder:", err)
+    }
+    return res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -715,20 +750,20 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
 
   const { idEvaluacion, idDocente, comentario } = req.body
   if (!idEvaluacion || !idDocente || !comentario) {
-    return res.status(400).json({ error: "idEvaluacion, idDocente y comentario son requeridos." })
+    return res.status(400).json({ error: "idEvaluacion, idDocente y comentario son requeridos" })
   }
 
   const texto = String(comentario).trim()
-  if (texto.length < 10) return res.status(400).json({ error: "El comentario debe tener al menos 10 caracteres." })
-  if (texto.length > 1000) return res.status(400).json({ error: "El comentario no puede superar los 1000 caracteres." })
+  if (texto.length < 10) return res.status(400).json({ error: "El comentario debe tener al menos 10 caracteres" })
+  if (texto.length > 1000) return res.status(400).json({ error: "El comentario no puede superar los 1000 caracteres" })
 
   try {
     const evaluacion = await executeQuerySingle(
       `SELECT IdEvaluacion, NumControl FROM eval.EvaluacionDocente WHERE IdEvaluacion = ?`,
       [idEvaluacion]
     )
-    if (!evaluacion) return res.status(404).json({ error: "Evaluación no encontrada." })
-    if (evaluacion.NumControl !== req.user.id) return res.status(403).json({ error: "No tienes permiso." })
+    if (!evaluacion) return res.status(404).json({ error: "Evaluación no encontrada" })
+    if (evaluacion.NumControl !== req.user.id) return res.status(403).json({ error: "No tienes permiso" })
 
     await executeQuery(
       `IF EXISTS (SELECT 1 FROM eval.ComentarioEvaluacion WHERE IdEvaluacion = ?)
@@ -741,10 +776,12 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
       [idEvaluacion, texto, idEvaluacion, idEvaluacion, req.user.id, idDocente, texto]
     )
 
-    return res.json({ success: true, mensaje: "Comentario guardado correctamente." })
+    return res.json({ success: true, mensaje: "Comentario guardado correctamente" })
   } catch (err) {
-    console.error("❌ Error en POST /api/evaluacion/comentario:", err)
-    return res.status(500).json({ error: "Error interno." })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en POST /api/evaluacion/comentario:", err)
+    }
+    return res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -764,7 +801,7 @@ app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) =
     )
     res.json({ docentes: rows })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -782,7 +819,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
     )
     res.json({ periodos: rows })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -795,23 +832,23 @@ app.get("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req, 
     if (!periodo) return res.json({ existe: false, mensaje: "No hay periodo activo" })
     res.json({ existe: true, periodo })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
 app.post("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req, res) => {
   const { idPeriodo } = req.body
-  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido." })
+  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido" })
 
   const periodoId = parseInt(idPeriodo)
-  if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido." })
+  if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido" })
 
   try {
     const existe = await executeQuerySingle(
       `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE IdPerio = ?`,
       [periodoId]
     )
-    if (!existe) return res.status(404).json({ error: "Periodo no encontrado." })
+    if (!existe) return res.status(404).json({ error: "Periodo no encontrado" })
 
     await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 0`)
     await executeQuery(`UPDATE dbo.PeriodoEscolar SET Situación = 1 WHERE IdPerio = ?`, [periodoId])
@@ -822,7 +859,7 @@ app.post("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req,
     )
     res.json({ success: true, mensaje: `Periodo ${nuevo.Nombre} activado`, periodo: nuevo })
   } catch (err) {
-    res.status(500).json({ error: "Error interno." })
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -840,7 +877,7 @@ app.get(
       )
       res.json({ grupos: rows })
     } catch (err) {
-      res.status(500).json({ error: "Error interno." })
+      res.status(500).json({ error: "Error interno" })
     }
   }
 )
@@ -848,11 +885,11 @@ app.get(
 app.get("/api/dashboard/docente/:idDocente/alumnos", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente } = req.params
   const { idPeriodo } = req.query
-  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido." })
+  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido" })
 
   const docenteId = parseInt(idDocente)
   const periodoId = parseInt(idPeriodo)
-  if (isNaN(docenteId) || isNaN(periodoId)) return res.status(400).json({ error: "IDs inválidos." })
+  if (isNaN(docenteId) || isNaN(periodoId)) return res.status(400).json({ error: "IDs inválidos" })
 
   try {
     const alumnos = await executeQuery(
@@ -887,10 +924,10 @@ app.get("/api/dashboard/docente/:idDocente/alumnos", authMiddleware, soloAdmin, 
 
 app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, res) => {
   const { idPeriodo } = req.query
-  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido." })
+  if (!idPeriodo) return res.status(400).json({ error: "idPeriodo requerido" })
 
   const periodoId = parseInt(idPeriodo)
-  if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido." })
+  if (isNaN(periodoId)) return res.status(400).json({ error: "idPeriodo inválido" })
 
   try {
     const departamentos = await executeQuery(
@@ -1018,14 +1055,16 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
     resultado.sort((a, b) => b.promedioGeneral - a.promedioGeneral)
     res.json({ departamentos: resultado })
   } catch (err) {
-    console.error("❌ Error en /api/dashboard/departamentos:", err)
-    res.status(500).json({ error: "Error interno: " + err.message })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/dashboard/departamentos:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
 app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res) => {
   const { idDocente, idPeriodo, idGrupo } = req.query
-  if (!idDocente || !idPeriodo) return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
+  if (!idDocente || !idPeriodo) return res.status(400).json({ error: "idDocente e idPeriodo requeridos" })
 
   const docenteId = parseInt(idDocente)
   const periodoId = parseInt(idPeriodo)
@@ -1038,7 +1077,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
       `SELECT IdDoce, Grado + ' ' + Nombre + ' ' + Apellidos AS nombre FROM dbo.Docente WHERE IdDoce = ?`,
       [docenteId]
     )
-    if (!docente) return res.status(404).json({ error: "Docente no encontrado." })
+    if (!docente) return res.status(404).json({ error: "Docente no encontrado" })
 
     const periodo = await executeQuerySingle(
       `SELECT IdPerio, Nombre FROM dbo.PeriodoEscolar WHERE IdPerio = ?`,
@@ -1119,8 +1158,10 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
         : "SIN DATOS"
     })
   } catch (err) {
-    console.error("❌ Error en /api/dashboard/resultados:", err)
-    res.status(500).json({ error: "Error interno: " + err.message })
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error en /api/dashboard/resultados:", err)
+    }
+    res.status(500).json({ error: "Error interno" })
   }
 })
 
@@ -1130,11 +1171,11 @@ app.get(
   async (req, res) => {
     const { idDocente } = req.params
     const { idPeriodo } = req.query
-    if (!idDocente || !idPeriodo) return res.status(400).json({ error: "idDocente e idPeriodo requeridos." })
+    if (!idDocente || !idPeriodo) return res.status(400).json({ error: "idDocente e idPeriodo requeridos" })
 
     const docenteId = parseInt(idDocente)
     const periodoId = parseInt(idPeriodo)
-    if (isNaN(docenteId) || isNaN(periodoId)) return res.status(400).json({ error: "IDs inválidos." })
+    if (isNaN(docenteId) || isNaN(periodoId)) return res.status(400).json({ error: "IDs inválidos" })
 
     try {
       const comentarios = await executeQuery(
@@ -1161,17 +1202,17 @@ app.get(
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, "0.0.0.0", async () => {
     console.log("=======================================")
-    console.log("🚀 SICOT API CORRIENDO (LOCAL)")
+    console.log("SICOT API CORRIENDO (LOCAL)")
     console.log("=======================================")
-    console.log(`🌐 Puerto: ${PORT}`)
-    console.log(`📡 Entorno: ${process.env.NODE_ENV || "development"}`)
-    console.log(`🗄️  Base de datos: ${dbConfig.server}/${dbConfig.database}`)
+    console.log(`Puerto: ${PORT}`)
+    console.log(`Entorno: ${process.env.NODE_ENV || "development"}`)
+    console.log(`Base de datos: ${dbConfig.server}/${dbConfig.database}`)
     console.log("=======================================")
     try {
       await getConnection()
-      console.log("✅ Conexión a Azure SQL establecida")
+      console.log("Conexión a Azure SQL establecida")
     } catch (err) {
-      console.error("⚠️ No se pudo conectar a Azure SQL:", err.message)
+      console.error("No se pudo conectar a Azure SQL:", err.message)
     }
   })
 }

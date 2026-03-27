@@ -2,11 +2,7 @@
  * api.js — Cliente HTTP centralizado para el SICOT
  *
  * En desarrollo (localhost):  apunta a http://localhost:3001
- * En producción (Vercel):     apunta a la variable VITE_API_URL
- *
- * Cómo configurar la URL del backend en Vercel:
- *   Vercel Dashboard → tu proyecto → Settings → Environment Variables
- *   VITE_API_URL = https://itssnp-evaluaciondocente-production.up.railway.app
+ * En producción (Vercel):     apunta a la misma URL (backend y frontend juntos)
  */
 
 /* ── URL base del backend ────────────────────────────────────── */
@@ -20,12 +16,12 @@ const BASE_URL = getBaseUrl()
 
 /* ── Helper interno: fetch con JWT automático ────────────────── */
 async function request(method, endpoint, body = null) {
-  // Buscar token en cualquiera de las dos claves (para compatibilidad)
+  // Buscar token en cualquiera de las dos claves
   let token = localStorage.getItem("sicot_token") || localStorage.getItem("token")
   
-  console.log(`📡 ${method} ${endpoint} - Token:`, token ? '✅ Presente' : '❌ No hay token')
-  if (token) {
-    console.log(`📡 Token (primeros 20): ${token.substring(0, 20)}...`)
+  // ✅ NO logs de tokens ni peticiones en producción
+  if (import.meta.env.DEV) {
+    console.log(`📡 ${method} ${endpoint}`)
   }
 
   const headers = { "Content-Type": "application/json" }
@@ -41,15 +37,17 @@ async function request(method, endpoint, body = null) {
 
     // Si el token expiró, limpiar sesión
     if (res.status === 401) {
-      console.warn("⚠️ Token expirado o inválido - Status 401")
-      const errorData = await res.json().catch(() => ({}))
-      console.warn("⚠️ Mensaje del servidor:", errorData)
+      // ✅ Solo log de error básico en desarrollo
+      if (import.meta.env.DEV) {
+        console.warn("⚠️ Token expirado")
+      }
       
       localStorage.removeItem("sicot_user")
       localStorage.removeItem("sicot_token")
       localStorage.removeItem("token")
       localStorage.removeItem("user")
       
+      const errorData = await res.json().catch(() => ({}))
       throw new Error(errorData.error || "Sesión expirada")
     }
 
@@ -61,7 +59,10 @@ async function request(method, endpoint, body = null) {
 
     return data
   } catch (error) {
-    console.error(`❌ Error en ${method} ${endpoint}:`, error)
+    // ✅ Solo error en consola, no detalles sensibles
+    if (import.meta.env.DEV) {
+      console.error(`❌ Error en ${method} ${endpoint}:`, error.message)
+    }
     throw error
   }
 }
@@ -76,27 +77,37 @@ async function request(method, endpoint, body = null) {
  */
 export async function login(usuario, password) {
   try {
-    console.log("🔐 Intentando login para:", usuario)
+    // ✅ Solo log en desarrollo
+    if (import.meta.env.DEV) {
+      console.log("🔐 Intentando login")
+    }
     
     const data = await request("POST", "/api/auth/login", { usuario, password })
     
-    // Guardar token en AMBAS claves para compatibilidad con todo el código
     if (data.token) {
       localStorage.setItem("sicot_token", data.token)
       localStorage.setItem("token", data.token)
-      console.log("✅ Token guardado correctamente")
-      console.log("✅ Token length:", data.token.length)
+      // ✅ Sin logs del token en producción
+      if (import.meta.env.DEV) {
+        console.log("✅ Token guardado")
+      }
     }
     
     return data
   } catch (error) {
-    console.error("❌ Error en login:", error)
+    // ✅ Solo error genérico
+    if (import.meta.env.DEV) {
+      console.error("❌ Error en login:", error.message)
+    }
     throw error
   }
 }
 
 export function logout() {
-  console.log("👋 Cerrando sesión")
+  // ✅ Sin logs en producción
+  if (import.meta.env.DEV) {
+    console.log("👋 Cerrando sesión")
+  }
   localStorage.removeItem("sicot_user")
   localStorage.removeItem("sicot_token")
   localStorage.removeItem("token")

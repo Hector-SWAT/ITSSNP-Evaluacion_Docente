@@ -26,7 +26,7 @@ const LOADING_ASSETS = {
 
 export default function PanelAlumno() {
   const navigate = useNavigate()
-  const { user, logout } useAuth()
+  const { user, logout } = useAuth()
 
   const [perfil, setPerfil] = useState(null)
   const [evaluaciones, setEvaluaciones] = useState([])

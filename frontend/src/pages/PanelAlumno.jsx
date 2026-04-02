@@ -16,7 +16,6 @@ const ASSETS = {
 
 const LOADING_ASSETS = {
   logoITSSNP: "https://i.postimg.cc/k62JgqyJ/Logo-ITSSNP.jpg",
-  logoInformatica: "https://i.postimg.cc/LYJ982Vm/Logo-INFORMATICA.png",
   logoITSSNPCompleto: "https://i.postimg.cc/9RDmQCBC/Logo-ITSSNP-Completo.jpg",
   logoTecNM: "https://i.postimg.cc/2b1kSrxm/Logo-Completo-TECNACIONAL.png",
   logoUltimate: "https://i.ibb.co/1YqB1k5W/logo-ultimate.png"
@@ -114,13 +113,6 @@ export default function PanelAlumno() {
             <img
               src={LOADING_ASSETS.logoITSSNP}
               alt="ITSSNP"
-              style={{ height: '70px', width: 'auto', objectFit: 'contain' }}
-              onError={(e) => { e.target.style.display = 'none' }}
-            />
-            <div style={{ width: '1px', height: '56px', background: '#e2e8f0', flexShrink: 0 }} />
-            <img
-              src={LOADING_ASSETS.logoInformatica}
-              alt="Informática"
               style={{ height: '70px', width: 'auto', objectFit: 'contain' }}
               onError={(e) => { e.target.style.display = 'none' }}
             />

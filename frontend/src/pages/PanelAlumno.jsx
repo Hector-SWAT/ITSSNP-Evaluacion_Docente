@@ -30,30 +30,23 @@ export default function PanelAlumno() {
   const [evaluaciones, setEvaluaciones] = useState([])
   const [loading, setLoading] = useState(true)
   const [refresc, setRefresc] = useState(0)
-
   const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
   const [logoTECNMFail, setLogoTECNMFail] = useState(false)
 
-  const yaEvaluado = (idDocente) => {
-    return evaluaciones.some(e => e.idTutor === idDocente && e.completada === true)
-  }
+  const yaEvaluado = (idDocente) =>
+    evaluaciones.some(e => e.idTutor === idDocente && e.completada === true)
 
   const estaDisponible = (fechaInicio, fechaFin) => {
     if (!fechaInicio || !fechaFin) return false
     const ahora = new Date()
-    const inicio = new Date(fechaInicio)
-    const fin = new Date(fechaFin)
-    return ahora >= inicio && ahora <= fin
+    return ahora >= new Date(fechaInicio) && ahora <= new Date(fechaFin)
   }
 
   const formatearFecha = (fecha) => {
     if (!fecha) return ""
     return new Date(fecha).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     })
   }
 
@@ -84,11 +77,11 @@ export default function PanelAlumno() {
   const tutor = perfil?.tutor || null
   const configuracion = perfil?.configuracion || {}
   const periodo = perfil?.periodo || ""
-
   const tutorCompletado = tutor ? yaEvaluado(tutor.id) : false
   const tutorDisponible = tutor ? estaDisponible(configuracion.fechaInicioTutor, configuracion.fechaFinTutor) : false
-  const hayEvaluacionesActivas = (configuracion.tutorActivo && tutor && tutorDisponible)
+  const hayEvaluacionesActivas = configuracion.tutorActivo && tutor && tutorDisponible
 
+  /* ──────────────── PANTALLA DE CARGA ──────────────── */
   if (loading) {
     return (
       <div style={{
@@ -102,99 +95,107 @@ export default function PanelAlumno() {
         <div style={{
           textAlign: 'center',
           background: 'white',
-          padding: '40px 50px',
-          borderRadius: '24px',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-          maxWidth: '500px',
+          padding: '44px 52px',
+          borderRadius: '28px',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.35)',
+          maxWidth: '520px',
           width: '90%'
         }}>
 
-          {/* Logos superiores */}
+          {/* ── Logos superiores ── */}
           <div style={{
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            gap: '16px',
-            marginBottom: '28px',
+            gap: '20px',
+            marginBottom: '20px',
             flexWrap: 'wrap'
           }}>
             <img
               src={LOADING_ASSETS.logoITSSNP}
               alt="ITSSNP"
-              style={{
-                height: '60px',
-                width: '60px',
-                objectFit: 'contain',
-                borderRadius: '10px',
-                background: '#f1f5f9',
-                padding: '4px'
-              }}
+              style={{ height: '70px', width: 'auto', objectFit: 'contain' }}
               onError={(e) => { e.target.style.display = 'none' }}
             />
+            <div style={{ width: '1px', height: '56px', background: '#e2e8f0', flexShrink: 0 }} />
             <img
               src={LOADING_ASSETS.logoInformatica}
               alt="Informática"
-              style={{
-                height: '60px',
-                width: '60px',
-                objectFit: 'contain',
-                borderRadius: '10px',
-                background: '#f1f5f9',
-                padding: '4px'
-              }}
+              style={{ height: '70px', width: 'auto', objectFit: 'contain' }}
               onError={(e) => { e.target.style.display = 'none' }}
             />
+            <div style={{ width: '1px', height: '56px', background: '#e2e8f0', flexShrink: 0 }} />
             <img
               src={LOADING_ASSETS.logoTecNM}
               alt="TecNM"
-              style={{
-                height: '60px',
-                width: '60px',
-                objectFit: 'contain',
-                borderRadius: '10px',
-                background: '#f1f5f9',
-                padding: '4px'
-              }}
+              style={{ height: '70px', width: 'auto', objectFit: 'contain' }}
               onError={(e) => { e.target.style.display = 'none' }}
             />
           </div>
 
-          {/* Logo grande */}
-          <div style={{ marginBottom: '28px' }}>
+          {/* ── Separador ── */}
+          <div style={{
+            width: '100%',
+            height: '1px',
+            background: 'linear-gradient(to right, transparent, #e2e8f0, transparent)',
+            marginBottom: '20px'
+          }} />
+
+          {/* ── Logo grande ── */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '22px'
+          }}>
             <img
               src={LOADING_ASSETS.logoITSSNPCompleto}
               alt="ITSSNP Completo"
               style={{
-                maxWidth: '280px',
-                width: '100%',
-                height: 'auto',
-                maxHeight: '90px',
-                objectFit: 'contain',
-                borderRadius: '10px',
-                background: '#f8fafc',
-                padding: '8px'
+                width: '160px',
+                height: '160px',
+                objectFit: 'contain'
               }}
               onError={(e) => { e.target.style.display = 'none' }}
             />
           </div>
 
-          {/* Texto institucional */}
+          {/* ── Texto institucional ── */}
           <div style={{ marginBottom: '28px' }}>
-            <h2 style={{ color: '#0b1f4a', marginBottom: '8px', fontSize: '17px', fontWeight: 700 }}>
+            <h2 style={{
+              color: '#0b1f4a',
+              marginBottom: '6px',
+              fontSize: '17px',
+              fontWeight: 700
+            }}>
               Tecnológico Nacional de México
             </h2>
-            <h3 style={{ color: '#1648b8', marginBottom: '8px', fontSize: '15px', fontWeight: 600 }}>
+            <h3 style={{
+              color: '#1648b8',
+              marginBottom: '6px',
+              fontSize: '14px',
+              fontWeight: 600,
+              lineHeight: 1.4
+            }}>
               Instituto Tecnológico Superior de la Sierra Norte de Puebla
             </h3>
-            <p style={{ color: '#4a5568', fontSize: '13px', marginBottom: '10px' }}>
+            <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '14px' }}>
               Departamento de Desarrollo Académico
             </p>
-            <p style={{ color: '#2563eb', fontWeight: 700, fontSize: '15px', letterSpacing: '0.3px' }}>
+            <div style={{
+              display: 'inline-block',
+              background: 'linear-gradient(135deg, #0b1f4a, #2563eb)',
+              color: 'white',
+              padding: '7px 22px',
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: 600,
+              letterSpacing: '0.3px'
+            }}>
               Sistema de Evaluación de Tutorías
-            </p>
+            </div>
           </div>
 
-          {/* Spinner */}
+          {/* ── Spinner ── */}
           <div style={{
             width: '44px',
             height: '44px',
@@ -202,14 +203,14 @@ export default function PanelAlumno() {
             borderTop: '4px solid #2563eb',
             borderRadius: '50%',
             animation: 'spin 1s linear infinite',
-            margin: '0 auto 16px'
+            margin: '0 auto 14px'
           }} />
-          <p style={{ fontSize: '13px', color: '#64748b', fontWeight: 500 }}>
+          <p style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>
             Cargando tu información...
           </p>
         </div>
 
-        {/* Logo creador */}
+        {/* ── Logo creador ── */}
         <div style={{
           position: 'fixed',
           bottom: '15px',
@@ -231,7 +232,7 @@ export default function PanelAlumno() {
 
         <style>{`
           @keyframes spin {
-            0% { transform: rotate(0deg); }
+            0%   { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
         `}</style>
@@ -239,6 +240,7 @@ export default function PanelAlumno() {
     )
   }
 
+  /* ──────────────── PANEL PRINCIPAL ──────────────── */
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -253,30 +255,23 @@ export default function PanelAlumno() {
           from { opacity:0; transform:translateY(20px); }
           to   { opacity:1; transform:translateY(0); }
         }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         .pa-root {
           font-family: 'DM Sans', sans-serif;
           min-height: 100dvh;
           background: #f8fafc;
-          display: flex;
-          flex-direction: column;
+          display: flex; flex-direction: column;
         }
 
-        /* ── NAV ── */
+        /* NAV */
         .pa-nav {
           background: linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%);
           height: 80px;
           padding: 0 clamp(16px,4vw,48px);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
+          display: flex; align-items: center; justify-content: space-between;
           box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-          position: sticky;
-          top: 0;
-          z-index: 10;
+          position: sticky; top: 0; z-index: 10;
         }
         .pa-nav-brand { display:flex; align-items:center; gap:24px; }
         .pa-nav-logos { display:flex; align-items:center; gap:20px; }
@@ -293,8 +288,7 @@ export default function PanelAlumno() {
         .pa-nav-title {
           font-size: 16px; font-weight: 600;
           color: rgba(255,255,255,0.95); letter-spacing: 0.3px;
-          border-left: 2px solid rgba(255,255,255,0.3);
-          padding-left: 20px;
+          border-left: 2px solid rgba(255,255,255,0.3); padding-left: 20px;
         }
         .pa-nav-user-section { display:flex; align-items:center; gap:16px; }
         .pa-nav-user-info {
@@ -315,7 +309,7 @@ export default function PanelAlumno() {
         }
         .pa-btn-logout:hover { background: rgba(255,255,255,0.24); transform: translateY(-1px); }
 
-        /* ── BODY ── */
+        /* BODY */
         .pa-body {
           flex: 1;
           padding: clamp(24px,4vw,48px) clamp(16px,4vw,48px);
@@ -323,7 +317,7 @@ export default function PanelAlumno() {
           display: flex; flex-direction: column; gap: 24px;
         }
 
-        /* ── HERO ── */
+        /* HERO */
         .pa-hero {
           background: linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%);
           border-radius: 24px; padding: 32px 36px;
@@ -332,31 +326,31 @@ export default function PanelAlumno() {
           box-shadow: 0 20px 40px rgba(11,31,74,0.25);
         }
         .pa-hero::before {
-          content: ''; position: absolute; inset: 0;
+          content:''; position:absolute; inset:0;
           background: radial-gradient(circle at 30% 70%, rgba(255,255,255,0.08) 0%, transparent 60%);
-          pointer-events: none;
+          pointer-events:none;
         }
         .pa-hero-content {
-          position: relative; z-index: 1;
-          display: flex; justify-content: space-between; align-items: flex-start;
-          flex-wrap: wrap; gap: 24px;
+          position:relative; z-index:1;
+          display:flex; justify-content:space-between; align-items:flex-start;
+          flex-wrap:wrap; gap:24px;
         }
         .pa-hero-info h1 {
-          font-size: clamp(24px, 3vw, 32px); font-weight: 800;
-          color: #fff; line-height: 1.2; margin-bottom: 12px;
+          font-size: clamp(24px,3vw,32px); font-weight:800;
+          color:#fff; line-height:1.2; margin-bottom:12px;
         }
         .pa-hero-badges { display:flex; flex-wrap:wrap; gap:10px; }
         .pa-hero-badge {
-          display: inline-flex; align-items: center; gap: 8px;
+          display:inline-flex; align-items:center; gap:8px;
           background: rgba(255,255,255,0.12);
           border: 1px solid rgba(255,255,255,0.22);
-          border-radius: 30px; padding: 8px 18px;
-          font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.95);
+          border-radius:30px; padding:8px 18px;
+          font-size:13px; font-weight:500; color:rgba(255,255,255,0.95);
         }
         .pa-hero-stats {
           background: rgba(255,255,255,0.10);
           border: 1.5px solid rgba(255,255,255,0.20);
-          border-radius: 18px; padding: 20px 28px; text-align: center;
+          border-radius:18px; padding:20px 28px; text-align:center;
         }
         .pa-stats-number { font-size:36px; font-weight:800; color:#fff; line-height:1; }
         .pa-stats-label {
@@ -365,32 +359,29 @@ export default function PanelAlumno() {
         }
         .pa-stats-divider { font-size:24px; color:rgba(255,255,255,0.3); margin:0 4px; }
 
-        /* Progress */
-        .pa-progress { margin-top: 24px; }
+        .pa-progress { margin-top:24px; }
         .pa-progress-header {
           display:flex; justify-content:space-between; margin-bottom:8px;
           font-size:13px; color:rgba(255,255,255,0.8);
         }
         .pa-progress-track {
-          background: rgba(255,255,255,0.2);
-          border-radius: 10px; height: 8px; overflow: hidden;
+          background:rgba(255,255,255,0.2); border-radius:10px; height:8px; overflow:hidden;
         }
         .pa-progress-fill {
-          background: #4ade80; border-radius: 10px;
-          height: 100%; transition: width 0.5s ease;
+          background:#4ade80; border-radius:10px; height:100%; transition:width 0.5s ease;
         }
 
-        /* ── SECTION ── */
+        /* SECTION */
         .pa-section {
-          background: #fff; border-radius: 24px;
-          border: 1.5px solid #e2e8f0; overflow: hidden;
-          animation: fadeUp 0.4s ease both;
+          background:#fff; border-radius:24px;
+          border:1.5px solid #e2e8f0; overflow:hidden;
+          animation:fadeUp 0.4s ease both;
         }
         .pa-section-header {
-          padding: 20px 24px; background: #f8fafc;
-          border-bottom: 1.5px solid #e2e8f0;
-          display:flex; justify-content:space-between;
-          align-items:center; flex-wrap:wrap; gap:12px;
+          padding:20px 24px; background:#f8fafc;
+          border-bottom:1.5px solid #e2e8f0;
+          display:flex; justify-content:space-between; align-items:center;
+          flex-wrap:wrap; gap:12px;
         }
         .pa-section-header h2 {
           font-size:18px; font-weight:700; color:#0f172a;
@@ -402,18 +393,17 @@ export default function PanelAlumno() {
           display:flex; align-items:center; gap:8px;
         }
         .pa-fechas img { width:14px; height:14px; opacity:0.6; }
-        .pa-section-content { padding: 24px; }
+        .pa-section-content { padding:24px; }
 
-        /* ── CARDS ── */
+        /* CARDS */
         .pa-card {
-          background: #fff; border: 1.5px solid #e2e8f0;
-          border-radius: 20px; padding: 20px;
-          transition: all 0.2s ease;
+          background:#fff; border:1.5px solid #e2e8f0;
+          border-radius:20px; padding:20px; transition:all 0.2s ease;
         }
         .pa-card:hover:not(.pa-card-disabled) {
-          border-color: #2563eb;
-          box-shadow: 0 8px 24px rgba(37,99,235,0.12);
-          transform: translateY(-2px);
+          border-color:#2563eb;
+          box-shadow:0 8px 24px rgba(37,99,235,0.12);
+          transform:translateY(-2px);
         }
         .pa-card-disabled { opacity:0.7; background:#f8fafc; }
         .pa-card-completada { background:#f0fdf4; border-color:#86efac; }
@@ -425,7 +415,6 @@ export default function PanelAlumno() {
           background: linear-gradient(135deg, #fed7aa, #fdba74);
           color: #b45309;
         }
-
         .pa-card-header { display:flex; align-items:flex-start; gap:16px; margin-bottom:16px; }
         .pa-avatar {
           width:56px; height:56px; border-radius:16px;
@@ -434,63 +423,53 @@ export default function PanelAlumno() {
           font-size:20px; font-weight:700; color:#1e40af; flex-shrink:0;
         }
         .pa-card-completada .pa-avatar {
-          background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-          color: #166534;
+          background: linear-gradient(135deg, #dcfce7, #bbf7d0); color:#166534;
         }
         .pa-card-info { flex:1; min-width:0; }
         .pa-card-name { font-size:16px; font-weight:700; color:#0f172a; margin-bottom:4px; }
         .pa-card-materia { font-size:13px; color:#64748b; margin-bottom:8px; }
         .pa-card-grupo {
           font-size:12px; font-weight:600; color:#7c3aed;
-          background:#f5f3ff; display:inline-block;
-          padding:2px 8px; border-radius:6px;
+          background:#f5f3ff; display:inline-block; padding:2px 8px; border-radius:6px;
         }
 
-        /* ── BADGES ── */
+        /* BADGES */
         .pa-badge {
           display:inline-flex; align-items:center; gap:6px;
-          padding:4px 10px; border-radius:20px;
-          font-size:11px; font-weight:700;
+          padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700;
         }
         .pa-badge-success  { background:#dcfce7; color:#166534; }
         .pa-badge-warning  { background:#fef3c7; color:#b45309; }
         .pa-badge-info     { background:#dbeafe; color:#1e40af; }
         .pa-badge-disabled { background:#f1f5f9; color:#94a3b8; }
 
-        /* ── BUTTONS ── */
+        /* BUTTONS */
         .pa-btn {
           width:100%; margin-top:16px; padding:12px; border:none;
           border-radius:12px; font-family:'DM Sans',sans-serif;
-          font-size:14px; font-weight:700; cursor:pointer;
-          transition:all 0.2s;
+          font-size:14px; font-weight:700; cursor:pointer; transition:all 0.2s;
           display:flex; align-items:center; justify-content:center; gap:8px;
         }
-        .pa-btn-primary {
-          background: linear-gradient(135deg, #1648b8, #2563eb);
-          color: #fff;
-        }
+        .pa-btn-primary { background:linear-gradient(135deg,#1648b8,#2563eb); color:#fff; }
         .pa-btn-primary:hover { opacity:0.95; transform:translateY(-1px); }
         .pa-btn-disabled { background:#e2e8f0; color:#94a3b8; cursor:not-allowed; }
 
-        /* ── EMPTY ── */
+        /* EMPTY */
         .pa-empty { text-align:center; padding:48px; color:#94a3b8; }
         .pa-empty-icon { font-size:48px; margin-bottom:16px; }
 
-        /* ── FOOTER ── */
+        /* FOOTER */
         .pa-footer {
-          background: #0f172a;
-          color: #e2e8f0;
-          text-align: center;
-          padding: 16px 10px;
-          font-family: 'Segoe UI', sans-serif;
-          border-top: 1px solid rgba(255,255,255,0.1);
+          background:#0f172a; color:#e2e8f0; text-align:center;
+          padding:16px 10px; font-family:'Segoe UI',sans-serif;
+          border-top:1px solid rgba(255,255,255,0.1);
         }
         .footer-main { font-size:14px; font-weight:600; letter-spacing:0.5px; }
         .footer-sub  { font-size:13px; color:#38bdf8; margin-top:4px; font-weight:500; }
         .footer-desc { font-size:12px; margin-top:6px; opacity:0.7; }
 
-        /* ── RESPONSIVE ── */
-        @media (max-width: 700px) {
+        /* RESPONSIVE */
+        @media (max-width:700px) {
           .pa-nav { height:auto; padding:16px; flex-direction:column; gap:12px; }
           .pa-nav-brand { width:100%; justify-content:center; }
           .pa-nav-user-section { width:100%; justify-content:center; flex-wrap:wrap; }

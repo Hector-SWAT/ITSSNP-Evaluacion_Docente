@@ -1,12 +1,11 @@
 /**
- * Evaluacion.jsx — VERSIÓN CON COMENTARIOS Y CARRERA
+ * Evaluacion.jsx — VERSIÓN CON DATOS DEL ALUMNO Y TUTOR VISIBLES
  *
  * Cambios realizados:
- * 1. ✅ Nuevo estado "comentario" en la máquina de estados
- * 2. ✅ Muestra formulario de comentarios después de responder todas las preguntas
- * 3. ✅ Integra guardarComentarioAPI para guardar el feedback
- * 4. ✅ NUEVO: Obtiene y pasa la carrera del alumno a /gracias
- * 5. ✅ Mantiene toda la lógica de UI y experiencia anterior
+ * 1. ✅ Muestra nombre y número de control del alumno en la barra de navegación
+ * 2. ✅ Muestra claramente qué tutor se está evaluando
+ * 3. ✅ Persiste la información del alumno durante toda la evaluación
+ * 4. ✅ Diseño mejorado con tarjeta de información del alumno
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -95,7 +94,7 @@ function Toast({ visible }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   COMPONENTE
+   COMPONENTE PRINCIPAL
 ══════════════════════════════════════════════════════════════ */
 export default function Evaluacion() {
   const navigate = useNavigate();
@@ -120,13 +119,7 @@ export default function Evaluacion() {
   const [cargandoInicial, setCargandoInicial] = useState(true);
   const [errorInicial, setErrorInicial] = useState("");
 
-  /* ── Estado principal ──
-     `fase` es la máquina de estados:
-       "libre"       → esperando que el alumno seleccione
-       "transitando" → respuesta guardada, esperando los 700ms antes de avanzar
-       "comentario"  → todas las preguntas respondidas, mostrando formulario
-       "enviando"    → enviando comentario y cerrando evaluación
-  ── */
+  /* ── Estado principal ── */
   const [pagina, setPagina] = useState(0);
   const [respuestas, setRespuestas] = useState({});
   const [fase, setFase] = useState("libre");
@@ -161,14 +154,14 @@ export default function Evaluacion() {
         setPreguntas(dataPreguntas.preguntas || []);
         setIdEncuesta(dataPreguntas.idEncuesta);
 
-        // Cargar datos del alumno (nombre, carrera, etc)
+        // Cargar datos del alumno (nombre, número de control, carrera, etc)
         const datosAlumno = await getPerfilAlumnoAPI(numControl);
         setAlumnoInfo(datosAlumno);
 
-        // Verifica que tutor.id sea el ID del docente (ej: 117, 133, etc.)
-        console.log("📝 Tutor ID:", tutor.id, "Tutor nombre:", tutor.nombre);
+        console.log("📝 Alumno evaluando:", datosAlumno);
+        console.log("📝 Tutor evaluado:", tutor);
 
-        // Al iniciar evaluación, debe pasar el ID del docente
+        // Iniciar evaluación
         const inicio = await iniciarEvaluacionAPI(tutor.id, idGrupoReal);
         setIdEvaluacion(inicio.idEvaluacion);
       } catch (error) {
@@ -189,23 +182,16 @@ export default function Evaluacion() {
     };
   }, []); // eslint-disable-line
 
-  /* ─────────────────────────────────────────────────────────────
-     MÁQUINA DE ESTADOS
-     "transitando" → espera 700ms → avanza a siguiente pregunta
-     "comentario"  → muestra formulario de comentarios
-     "enviando"    → espera 1100ms → llama a la API y navega
-  ───────────────────────────────────────────────────────────── */
+  /* ── Máquina de estados ── */
   useEffect(() => {
     if (fase === "transitando") {
       clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         const siguiente = paginaRef.current + 1;
 
-        // Si es la última pregunta, ir a comentarios
         if (siguiente >= preguntas.length) {
           setFase("comentario");
         } else {
-          // Si no, avanzar a la siguiente
           paginaRef.current = siguiente;
           setPagina(siguiente);
           setAnimKey((k) => k + 1);
@@ -220,7 +206,6 @@ export default function Evaluacion() {
       clearTimeout(timerRef.current);
       timerRef.current = setTimeout(async () => {
         try {
-          // Preparar respuestas para la API
           const respuestasArray = Object.entries(respuestasRef.current).map(
             ([idPregunta, calificacion]) => ({
               idPregunta: Number(idPregunta),
@@ -228,7 +213,6 @@ export default function Evaluacion() {
             }),
           );
 
-          // Enviar respuestas a la API
           const resultado = await guardarRespuestasAPI(
             idEvaluacion,
             respuestasArray,
@@ -241,6 +225,8 @@ export default function Evaluacion() {
                 tutor,
                 totalPreguntas: preguntas.length,
                 carrera: alumnoInfo?.carrera || "Carrera",
+                alumnoNombre: alumnoInfo?.nombre,
+                numControl: numControl,
               },
             });
           } else {
@@ -253,7 +239,7 @@ export default function Evaluacion() {
         }
       }, 1100);
     }
-  }, [fase, idEvaluacion, navigate, preguntas.length, tutor, alumnoInfo]);
+  }, [fase, idEvaluacion, navigate, preguntas.length, tutor, alumnoInfo, numControl]);
 
   /* ── Derivados del render actual ── */
   const pregActual = preguntas[pagina];
@@ -275,7 +261,7 @@ export default function Evaluacion() {
     toastRef.current = setTimeout(() => setToastVisible(false), 2500);
   };
 
-  /* ── Seleccionar opción ──────────────────────────────────── */
+  /* ── Seleccionar opción ── */
   const seleccionar = (valor) => {
     if (!estaLibre) {
       if (respActual !== undefined) mostrarToast();
@@ -289,15 +275,12 @@ export default function Evaluacion() {
     setFase(esUltima ? "transitando" : "transitando");
   };
 
-  /* ── Manejar envío de comentario ──────────────────────────── */
-  // En Evaluacion.jsx
-  /* ── Manejar envío de comentario ──────────────────────────── */
+  /* ── Manejar envío de comentario ── */
   const handleEnviarComentario = async (comentarioTexto) => {
     setCargandoComentario(true);
     setErrorComentario(null);
 
     try {
-      // Asegurar que comentarioTexto es string
       const texto = String(comentarioTexto).trim();
 
       console.log("📝 Enviando comentario:", texto);
@@ -310,7 +293,7 @@ export default function Evaluacion() {
         throw new Error("El comentario debe tener al menos 10 caracteres");
       }
 
-      // PRIMERO: Guardar las respuestas de la evaluación
+      // Guardar respuestas
       console.log("💾 Guardando respuestas de la evaluación...");
 
       const respuestasArray = Object.entries(respuestasRef.current).map(
@@ -320,14 +303,10 @@ export default function Evaluacion() {
         }),
       );
 
-      console.log("📊 Respuestas a guardar:", respuestasArray);
-
       const resultadoRespuestas = await guardarRespuestasAPI(
         idEvaluacion,
         respuestasArray,
       );
-
-      console.log("📡 Resultado guardar respuestas:", resultadoRespuestas);
 
       if (!resultadoRespuestas.success) {
         throw new Error(
@@ -335,16 +314,12 @@ export default function Evaluacion() {
         );
       }
 
-      // SEGUNDO: Guardar el comentario
-      console.log("💬 Guardando comentario...");
-
+      // Guardar comentario
       const resultadoComentario = await guardarComentarioAPI(
         idEvaluacion,
         tutor.id,
         texto,
       );
-
-      console.log("📡 Resultado guardar comentario:", resultadoComentario);
 
       if (!resultadoComentario.success) {
         throw new Error(
@@ -352,13 +327,15 @@ export default function Evaluacion() {
         );
       }
 
-      // TERCERO: Navegar a la página de gracias
+      // Navegar a gracias
       navigate("/gracias", {
         replace: true,
         state: {
           tutor,
           totalPreguntas: preguntas.length,
           carrera: alumnoInfo?.carrera || "Carrera",
+          alumnoNombre: alumnoInfo?.nombre,
+          numControl: numControl,
         },
       });
     } catch (error) {
@@ -367,6 +344,7 @@ export default function Evaluacion() {
       setCargandoComentario(false);
     }
   };
+
   /* ── Loading inicial ── */
   if (cargandoInicial) {
     return (
@@ -433,7 +411,7 @@ export default function Evaluacion() {
     );
   }
 
-  /* ── Mostrar formulario de comentarios ── */
+  /* ── Formulario de comentarios ── */
   if (fase === "comentario" || fase === "enviando") {
     return (
       <>
@@ -462,7 +440,6 @@ export default function Evaluacion() {
 
           .com-nav {
             background: linear-gradient(135deg,#0d2660 0%,#1648b8 55%,#0b7ec9 100%);
-            height: 60px;
             padding: 0 clamp(16px,4vw,40px);
             display: flex;
             align-items: center;
@@ -471,6 +448,9 @@ export default function Evaluacion() {
             position: sticky;
             top: 0;
             z-index: 20;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 20px;
           }
 
           .com-back {
@@ -490,15 +470,38 @@ export default function Evaluacion() {
             background: rgba(255,255,255,.24);
           }
 
-          .com-nav-title {
+          .com-alumno-info {
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 12px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+          }
+
+          .com-alumno-info span {
+            font-weight: 600;
+          }
+
+          .com-tutor-info {
             font-size: 13px;
             font-weight: 700;
             color: rgba(255,255,255,.85);
-            flex: 1;
-            text-align: center;
-            padding: 0 10px;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            background: rgba(255,255,255,0.1);
+            padding: 6px 16px;
+            border-radius: 20px;
+          }
+
+          .com-nav-num {
+            font-size: 13px;
+            font-weight: 700;
+            color: rgba(255,255,255,.82);
+            background: rgba(255,255,255,.12);
+            border-radius: 8px;
+            padding: 5px 12px;
             white-space: nowrap;
           }
 
@@ -521,31 +524,27 @@ export default function Evaluacion() {
         `}</style>
 
         <div className="com-page">
-          {/* Navbar */}
           <nav className="com-nav">
-            <button
-              className="com-back"
-              onClick={() => navigate("/panel-alumno")}
-            >
+            <button className="com-back" onClick={() => navigate("/panel-alumno")}>
               ← Volver
             </button>
-            <p className="com-nav-title">{tutor.nombre}</p>
-            <span
-              style={{
-                fontSize: "13px",
-                fontWeight: "700",
-                color: "rgba(255,255,255,.82)",
-                background: "rgba(255,255,255,.12)",
-                borderRadius: "8px",
-                padding: "5px 12px",
-                whiteSpace: "nowrap",
-              }}
-            >
+            
+            {/* Información del alumno */}
+            <div className="com-alumno-info">
+              <span>👨‍🎓 {alumnoInfo?.nombre || 'Alumno'}</span>
+              <span>🆔 {numControl}</span>
+            </div>
+            
+            {/* Información del tutor */}
+            <div className="com-tutor-info">
+              📝 Evaluando a: {tutor.nombre}
+            </div>
+            
+            <span className="com-nav-num">
               {respondidas}/{TOTAL} preguntas
             </span>
           </nav>
 
-          {/* Body */}
           <div className="com-body">
             <div className="com-wrap">
               <Comentario
@@ -553,6 +552,7 @@ export default function Evaluacion() {
                 onEnviar={handleEnviarComentario}
                 cargando={cargandoComentario}
                 error={errorComentario}
+                alumnoInfo={{ nombre: alumnoInfo?.nombre, numControl }}
               />
             </div>
           </div>
@@ -593,11 +593,68 @@ export default function Evaluacion() {
         .ev-root { font-family: 'DM Sans', sans-serif; min-height: 100dvh; background: #eef2ff; display: flex; flex-direction: column; }
 
         /* navbar */
-        .ev-nav { background: linear-gradient(135deg,#0d2660 0%,#1648b8 55%,#0b7ec9 100%); height: 60px; padding: 0 clamp(16px,4vw,40px); display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 14px rgba(0,0,0,.26); position: sticky; top: 0; z-index: 20; }
-        .ev-back { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); border-radius: 8px; padding: 6px 14px; font-family: 'DM Sans',sans-serif; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; transition: background .15s; }
+        .ev-nav { 
+          background: linear-gradient(135deg,#0d2660 0%,#1648b8 55%,#0b7ec9 100%); 
+          padding: 12px clamp(16px,4vw,40px);
+          display: flex; 
+          align-items: center; 
+          justify-content: space-between; 
+          box-shadow: 0 2px 14px rgba(0,0,0,.26); 
+          position: sticky; 
+          top: 0; 
+          z-index: 20;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        
+        .ev-back { 
+          background: rgba(255,255,255,.12); 
+          border: 1px solid rgba(255,255,255,.22); 
+          border-radius: 8px; 
+          padding: 6px 14px; 
+          font-family: 'DM Sans',sans-serif; 
+          font-size: 13px; 
+          font-weight: 600; 
+          color: #fff; 
+          cursor: pointer; 
+          transition: background .15s; 
+        }
         .ev-back:hover { background: rgba(255,255,255,.24); }
-        .ev-nav-mid { font-size: 13px; font-weight: 700; color: rgba(255,255,255,.85); flex: 1; text-align: center; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ev-nav-num { font-size: 13px; font-weight: 700; color: rgba(255,255,255,.82); background: rgba(255,255,255,.12); border-radius: 8px; padding: 5px 12px; white-space: nowrap; }
+        
+        .ev-alumno-badge {
+          background: rgba(255,255,255,0.15);
+          border-radius: 20px;
+          padding: 6px 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 12px;
+          color: white;
+          flex-wrap: wrap;
+        }
+        
+        .ev-alumno-badge span {
+          font-weight: 600;
+        }
+        
+        .ev-tutor-badge {
+          background: rgba(255,255,255,0.1);
+          border-radius: 20px;
+          padding: 6px 16px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #fcd34d;
+        }
+        
+        .ev-nav-num { 
+          font-size: 13px; 
+          font-weight: 700; 
+          color: rgba(255,255,255,.82); 
+          background: rgba(255,255,255,.12); 
+          border-radius: 8px; 
+          padding: 5px 12px; 
+          white-space: nowrap; 
+        }
 
         /* barra progreso */
         .ev-prog { height: 5px; background: rgba(14,40,100,.10); position: sticky; top: 60px; z-index: 19; }
@@ -677,18 +734,37 @@ export default function Evaluacion() {
         @media (max-width: 480px) {
           .ev-opt { padding: 11px 12px; gap: 10px; }
           .ev-q   { font-size: 15px; }
+          .ev-nav { flex-direction: column; align-items: stretch; }
+          .ev-alumno-badge, .ev-tutor-badge { justify-content: center; }
         }
       `}</style>
 
       <Toast visible={toastVisible} />
 
       <div className="ev-root">
-        {/* Navbar */}
+        {/* Navbar con información del alumno y tutor */}
         <nav className="ev-nav">
           <button className="ev-back" onClick={() => navigate("/panel-alumno")}>
             ← Volver
           </button>
-          <p className="ev-nav-mid">{tutor.nombre}</p>
+          
+          {/* Información del alumno */}
+          <div className="ev-alumno-badge">
+            <span>👨‍🎓 {alumnoInfo?.nombre || 'Alumno'}</span>
+            <span>🆔 {numControl}</span>
+            {alumnoInfo?.carrera && (
+              <span>📚 {alumnoInfo.carrera}</span>
+            )}
+            {alumnoInfo?.semestre && (
+              <span>📖 {alumnoInfo.semestre}° Semestre</span>
+            )}
+          </div>
+          
+          {/* Información del tutor que se está evaluando */}
+          <div className="ev-tutor-badge">
+            🎓 Evaluando a: {tutor.nombre}
+          </div>
+          
           <span className="ev-nav-num">
             {pagina + 1} / {TOTAL}
           </span>
@@ -701,19 +777,22 @@ export default function Evaluacion() {
 
         <div className="ev-body">
           <div className="ev-wrap">
-            {/* Tutor */}
+            {/* Tarjeta del tutor */}
             <div className="ev-tcard">
               <div className="ev-tav">{inicial}</div>
               <div>
-                <p className="ev-tname">{tutor.nombre}</p>
+                <p className="ev-tname">
+                  {tutor.nombre}
+                  <span style={{ fontSize: '11px', marginLeft: '8px', color: '#64748b' }}>
+                    (Docente/Tutor)
+                  </span>
+                </p>
                 <p className="ev-tmat">{tutor.materia}</p>
                 <div className="ev-ttags">
-                  {tutor.grupo && (
-                    <span className="ev-ttag">{tutor.grupo}</span>
-                  )}
-                  <span className="ev-ttag">Encuesta de tutoría</span>
+                  {tutor.grupo && <span className="ev-ttag">📋 Grupo: {tutor.grupo}</span>}
+                  <span className="ev-ttag">📝 Encuesta de tutoría</span>
                   <span className="ev-ttag ev-ttag-g">
-                    {respondidas}/{TOTAL} respondidas
+                    ✅ {respondidas}/{TOTAL} respondidas
                   </span>
                 </div>
               </div>
@@ -809,7 +888,7 @@ export default function Evaluacion() {
                 })}
               </div>
 
-              {/* Hint: esperando selección */}
+              {/* Hint */}
               {estaLibre && (
                 <div className="ev-hint ev-hint-info">
                   <span>💡</span>
@@ -819,7 +898,6 @@ export default function Evaluacion() {
                 </div>
               )}
 
-              {/* Hint: respuesta guardada */}
               {!estaLibre && (
                 <div className="ev-hint ev-hint-ok">
                   <span>✅</span>

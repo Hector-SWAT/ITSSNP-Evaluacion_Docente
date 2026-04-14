@@ -512,7 +512,7 @@ export default function PanelAlumno() {
                 <h1>Evaluación de Tutorías</h1>
                 <div className="pa-hero-badges">
                   <span className="pa-hero-badge">
-                    <img src={ASSETS.iconUser} alt="" style={{ width:'14px', height:'14px', filter:'brightness(0) invert(1)' }} />
+                    <img src={ASSETS.iconUser} alt="" style={{ width: '14px', height: '14px', filter: 'brightness(0) invert(1)' }} />
                     No. Control: <strong>{user?.id}</strong>
                   </span>
                   {perfil && (
@@ -527,7 +527,7 @@ export default function PanelAlumno() {
                   )}
                 </div>
                 {perfil && (
-                  <p style={{ color:'rgba(255,255,255,0.65)', marginTop:'12px', fontSize:'14px' }}>
+                  <p style={{ color: 'rgba(255,255,255,0.65)', marginTop: '12px', fontSize: '14px' }}>
                     {perfil.carrera}
                   </p>
                 )}
@@ -536,7 +536,7 @@ export default function PanelAlumno() {
                 <div>
                   <span className="pa-stats-number">{tutorCompletado ? 1 : 0}</span>
                   <span className="pa-stats-divider">/</span>
-                  <span className="pa-stats-number" style={{ opacity:0.5 }}>1</span>
+                  <span className="pa-stats-number" style={{ opacity: 0.5 }}>1</span>
                 </div>
                 <div className="pa-stats-label">Tutor evaluado</div>
               </div>
@@ -547,17 +547,17 @@ export default function PanelAlumno() {
                 <span>{tutorCompletado ? 100 : 0}%</span>
               </div>
               <div className="pa-progress-track">
-                <div className="pa-progress-fill" style={{ width:`${tutorCompletado ? 100 : 0}%` }} />
+                <div className="pa-progress-fill" style={{ width: `${tutorCompletado ? 100 : 0}%` }} />
               </div>
             </div>
           </div>
 
           {/* ── Sin evaluaciones activas ── */}
           {!hayEvaluacionesActivas && (
-            <div className="pa-empty" style={{ background:'#fff', borderRadius:20, border:'2px dashed #cbd5e1' }}>
+            <div className="pa-empty" style={{ background: '#fff', borderRadius: 20, border: '2px dashed #cbd5e1' }}>
               <div className="pa-empty-icon">📅</div>
               <p>No hay evaluaciones activas en este momento.</p>
-              <p style={{ fontSize:13, marginTop:8, color:'#94a3b8' }}>
+              <p style={{ fontSize: 13, marginTop: 8, color: '#94a3b8' }}>
                 Las evaluaciones estarán disponibles durante el periodo establecido por la administración.
               </p>
             </div>
@@ -584,7 +584,7 @@ export default function PanelAlumno() {
                     </div>
                   </div>
 
-                  <div style={{ marginTop:12 }}>
+                  <div style={{ marginTop: 12 }}>
                     {tutorCompletado ? (
                       <span className="pa-badge pa-badge-success">✓ Evaluación completada</span>
                     ) : !tutorDisponible ? (
@@ -595,10 +595,19 @@ export default function PanelAlumno() {
                   </div>
 
                   {!tutorCompletado && tutorDisponible && (
+                    // En PanelAlumno.jsx, dentro del botón "Evaluar Tutor →"
                     <button
                       className="pa-btn pa-btn-primary"
                       onClick={() => navigate(`/evaluacion/${tutor.id}`, {
-                        state: { tutor, numControl: user?.id, idGrupo: tutor.id_grupo, tipo: "tutor" }
+                        state: {
+                          tutor,
+                          numControl: user?.id,
+                          idGrupo: tutor.id_grupo,
+                          tipo: "tutor",
+                          alumnoNombre: perfil?.nombre,
+                          alumnoCarrera: perfil?.carrera,
+                          alumnoSemestre: perfil?.semestre
+                        }
                       })}
                     >
                       Evaluar Tutor →

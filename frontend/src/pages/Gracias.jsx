@@ -30,7 +30,7 @@ export default function Gracias() {
     })
   })
 
-  const tutor = location.state?.tutor ?? { nombre: "Tutor" }
+  const tutor = location.state?.tutor ?? { nombre: "Tutor(a)" }
   const totalPreguntas = location.state?.totalPreguntas ?? 0
 
   const handleContinuar = () => {
@@ -344,7 +344,7 @@ export default function Gracias() {
               </h2>
               <p className="gracias-message-text">
                 Hola <span style={{ fontWeight: 700, color: '#0f172a' }}>{alumnoInfo.nombre}</span>,
-                hemos recibido tu evaluación del docente <span style={{ fontWeight: 700, color: '#0f172a' }}>{tutor.nombre}</span>.
+                hemos recibido tu evaluación del <span style={{ fontWeight: 700, color: '#0f172a' }}>tutor(a) {tutor.nombre}</span>.
                 Tu retroalimentación contribuye significativamente a nuestro proceso de mejora continua.
               </p>
             </div>
@@ -393,7 +393,7 @@ export default function Gracias() {
             {/* Pie */}
             <div className="gracias-footer">
               <p className="gracias-footer-text">
-                Si aún tienes <span className="gracias-footer-highlight">docentes por evaluar</span>,
+                Si aún tienes <span className="gracias-footer-highlight">tutores(as) por evaluar</span>,
                 serás redirigido a tu panel de control donde podrás continuar con las evaluaciones pendientes.
               </p>
             </div>

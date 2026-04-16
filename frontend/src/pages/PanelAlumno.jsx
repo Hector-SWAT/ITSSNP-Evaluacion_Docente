@@ -32,8 +32,8 @@ export default function PanelAlumno() {
   const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
   const [logoTECNMFail, setLogoTECNMFail] = useState(false)
 
-  const yaEvaluado = (idDocente) =>
-    evaluaciones.some(e => e.idTutor === idDocente && e.completada === true)
+  const yaEvaluado = (idTutor) =>
+    evaluaciones.some(e => e.idTutor === idTutor && e.completada === true)
 
   const estaDisponible = (fechaInicio, fechaFin) => {
     if (!fechaInicio || !fechaFin) return false
@@ -538,7 +538,7 @@ export default function PanelAlumno() {
                   <span className="pa-stats-divider">/</span>
                   <span className="pa-stats-number" style={{ opacity: 0.5 }}>1</span>
                 </div>
-                <div className="pa-stats-label">Tutor evaluado</div>
+                <div className="pa-stats-label">Tutor(a) evaluado(a)</div>
               </div>
             </div>
             <div className="pa-progress">
@@ -567,7 +567,7 @@ export default function PanelAlumno() {
           {configuracion.tutorActivo && tutor && (
             <div className="pa-section">
               <div className="pa-section-header">
-                <h2>👨‍🏫 Tu Tutor Académico</h2>
+                <h2>👨‍🏫 Tu Tutor(a) Académico</h2>
                 <div className="pa-fechas">
                   <img src={ASSETS.iconCalendar} alt="" />
                   {formatearFecha(configuracion.fechaInicioTutor)} - {formatearFecha(configuracion.fechaFinTutor)}
@@ -595,7 +595,6 @@ export default function PanelAlumno() {
                   </div>
 
                   {!tutorCompletado && tutorDisponible && (
-                    // En PanelAlumno.jsx, dentro del botón "Evaluar Tutor →"
                     <button
                       className="pa-btn pa-btn-primary"
                       onClick={() => navigate(`/evaluacion/${tutor.id}`, {
@@ -610,7 +609,7 @@ export default function PanelAlumno() {
                         }
                       })}
                     >
-                      Evaluar Tutor →
+                      Evaluar Tutor(a) →
                     </button>
                   )}
                   {tutorCompletado && (

@@ -9,6 +9,8 @@ import {
   getResultadosDocenteAPI,
 } from "../services/evaluacionData"
 import ConfiguracionEvaluacion from "./admin/ConfiguracionEvaluacion"
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 
 /* ─── API departamentos ──────────────────────────────────── */
 const getApiUrl = () => {
@@ -28,6 +30,19 @@ async function getDepartamentosAPI(idPeriodo) {
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error || 'Error al obtener departamentos') }
   const data = await response.json()
   return data.departamentos || []
+}
+
+async function getComentariosTutorAPI(idTutor, idPeriodo) {
+  try {
+    const response = await fetch(`${API_URL}/api/dashboard/docentes/${idTutor}/comentarios?idPeriodo=${idPeriodo}`, { headers: getHeaders() })
+    if (response.ok) {
+      const data = await response.json()
+      return data.comentarios || []
+    }
+  } catch (error) {
+    console.error('Error obteniendo comentarios:', error)
+  }
+  return []
 }
 
 /* ─── Colores clasificación ──────────────────────────────── */
@@ -94,9 +109,9 @@ function RadarChart({ datos, size = 260 }) {
 /* ─── Export CSV / Excel ─────────────────────────────────── */
 function exportarCSV(resultado, grupoLabel) {
   if (!resultado) return
-  const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
+  const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   const rows = [
-    ["SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP"], ["Docente:", docente.nombre], ["Periodo:", periodo.nombre],
+    ["SISTEMA DE EVALUACIÓN DOCENTE — ITSSNP"], ["Tutor(a):", tutor.nombre], ["Periodo:", periodo.nombre],
     ...(grupoLabel ? [["Grupo:", grupoLabel]] : []),
     ["Promedio:", promedioGeneral, "Clasificación:", clasificacion], [],
     ["#","Criterio","Promedio"], ...CATEGORIAS.map((c,i)=>[i+1,c.nombre,promediosCat[c.id]?.toFixed(2)??"—"]),
@@ -107,18 +122,18 @@ function exportarCSV(resultado, grupoLabel) {
   ]
   const a = document.createElement("a")
   a.href = URL.createObjectURL(new Blob(["\uFEFF"+rows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\n")], { type:"text/csv;charset=utf-8;" }))
-  a.download = `evaluacion_${docente.nombre.replace(/\s+/g,"_")}.csv`; a.click()
+  a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.csv`; a.click()
 }
 
 function exportarExcel(resultado, grupoLabel) {
   if (!resultado) return
-  const { docente, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
+  const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   const cell = (v) => `<Cell><Data ss:Type="String">${String(v??"").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</Data></Cell>`
   const numCell = (v) => `<Cell><Data ss:Type="Number">${v}</Data></Cell>`
   const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
 <Worksheet ss:Name="Resultados"><Table>
-<Row><Cell><Data ss:Type="String">Docente: ${docente.nombre}</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Tutor(a): ${tutor.nombre}</Data></Cell></Row>
 <Row><Cell><Data ss:Type="String">Periodo: ${periodo.nombre}</Data></Cell></Row>
 ${grupoLabel?`<Row><Cell><Data ss:Type="String">Grupo: ${grupoLabel}</Data></Cell></Row>`:""}
 <Row><Cell><Data ss:Type="String">Promedio: ${promedioGeneral}</Data></Cell><Cell><Data ss:Type="String">Clasificación: ${clasificacion}</Data></Cell></Row>
@@ -130,11 +145,226 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
 </Table></Worksheet></Workbook>`
   const a = document.createElement("a")
   a.href = URL.createObjectURL(new Blob([xml], { type:"application/vnd.ms-excel;charset=utf-8;" }))
-  a.download = `evaluacion_${docente.nombre.replace(/\s+/g,"_")}.xls`; a.click()
+  a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
+}
+
+/* ─── Export PDF ─────────────────────────────────────────── */
+async function exportarPDF(resultado, grupoLabel, comentarios = []) {
+  if (!resultado) return
+  
+  const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
+  
+  const pdf = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'letter'
+  })
+  
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin = 15
+  let y = margin
+
+  // Función para agregar encabezado
+  const addHeader = (doc, pageNum = null, totalPages = null) => {
+    const w = doc.internal.pageSize.getWidth()
+    const h = 35
+    
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Instituto Tecnológico Superior de la Sierra Norte de Puebla', w / 2, 12, { align: 'center' })
+    doc.setFontSize(9)
+    doc.text('FORMATO: RESULTADOS DE EVALUACIÓN DE PERSONA TUTORA', w / 2, 20, { align: 'center' })
+    doc.text('POR ALUMNO', w / 2, 26, { align: 'center' })
+    doc.setFontSize(8)
+    doc.text('Rev. 01 (ITSSNP-AC-PA-03-8)', w - margin, 32, { align: 'right' })
+    
+    if (pageNum && totalPages) {
+      doc.setFontSize(8)
+      doc.text(`Página ${pageNum} de ${totalPages}`, w - margin, pageHeight - 10, { align: 'right' })
+    }
+    
+    return h + 5
+  }
+
+  // PORTADA
+  pdf.addPage()
+  
+  // Título principal
+  pdf.setFontSize(24)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text('SISTEMA DE EVALUACIÓN DOCENTE', pageWidth / 2, 80, { align: 'center' })
+  pdf.setFontSize(18)
+  pdf.text('ITSSNP', pageWidth / 2, 95, { align: 'center' })
+  
+  pdf.setFontSize(14)
+  pdf.setFont('helvetica', 'normal')
+  pdf.text('Resultados de Evaluación de', pageWidth / 2, 120, { align: 'center' })
+  pdf.setFontSize(16)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text('PERSONA TUTORA', pageWidth / 2, 132, { align: 'center' })
+  
+  // Línea decorativa
+  pdf.setDrawColor(0, 102, 204)
+  pdf.setLineWidth(0.5)
+  pdf.line(pageWidth/2 - 50, 142, pageWidth/2 + 50, 142)
+  
+  // Información del documento
+  pdf.setFontSize(11)
+  pdf.setFont('helvetica', 'normal')
+  const infoY = 165
+  pdf.text(`División Académica/Departamento: Ingeniería Informática`, margin, infoY)
+  pdf.text(`Periodo a evaluar: ${periodo.nombre}`, margin, infoY + 8)
+  pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, infoY + 16)
+  pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, infoY + 24)
+  pdf.text(`Grupo evaluado: ${grupoLabel || 'Todos los grupos'}`, margin, infoY + 32)
+  
+  // Fecha de generación
+  pdf.setFontSize(9)
+  pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-MX')}`, pageWidth - margin, pageHeight - 20, { align: 'right' })
+  
+  // Footer portada
+  pdf.setFontSize(8)
+  pdf.text('C.c.p. Personal Tutor Evaluado – Jefa de División – Expediente de material de apoyo', pageWidth / 2, pageHeight - 15, { align: 'center' })
+
+  // PÁGINA DE RESULTADOS
+  pdf.addPage()
+  y = addHeader(pdf)
+  
+  // Tabla de criterios evaluados
+  const tableData = CATEGORIAS.map((cat, i) => {
+    const val = promediosCat[cat.id] ?? 0
+    const cname = clasifFromVal(val)
+    return [i + 1, cat.nombre, val.toFixed(2), cname]
+  })
+  
+  pdf.autoTable({
+    startY: y,
+    head: [['#', 'CRITERIO EVALUADO', 'PUNTAJE', 'CLASIFICACIÓN']],
+    body: tableData,
+    theme: 'grid',
+    styles: { fontSize: 9, cellPadding: 3, valign: 'middle' },
+    headStyles: { fillColor: [0, 102, 204], textColor: [255, 255, 255], fontSize: 10, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+    columnStyles: {
+      0: { cellWidth: 15, halign: 'center' },
+      1: { cellWidth: 120 },
+      2: { cellWidth: 25, halign: 'center' },
+      3: { cellWidth: 35, halign: 'center' }
+    }
+  })
+  
+  y = pdf.lastAutoTable.finalY + 10
+  
+  // Promedio general
+  pdf.setFontSize(12)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text(`PROMEDIO GENERAL: ${promedioGeneral.toFixed(2)} / 5.00`, margin, y)
+  pdf.setFontSize(11)
+  pdf.text(`CLASIFICACIÓN: ${clasificacion}`, margin + 100, y)
+  
+  y += 15
+  
+  // Gráfica de resultados
+  pdf.setFontSize(10)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text('RESULTADOS REPRESENTADOS CON GRÁFICA', margin, y)
+  y += 5
+  
+  // Dibujar gráfica de barras simple
+  const chartWidth = pageWidth - (margin * 2)
+  const chartHeight = 70
+  const barWidth = (chartWidth - 80) / CATEGORIAS.length
+  const maxValue = 5
+  
+  // Eje Y
+  pdf.setDrawColor(150, 150, 150)
+  pdf.setLineWidth(0.2)
+  pdf.line(margin + 40, y, margin + 40, y + chartHeight)
+  pdf.line(margin + 40, y + chartHeight, margin + chartWidth, y + chartHeight)
+  
+  // Etiquetas del eje Y
+  for (let i = 0; i <= 5; i++) {
+    const yPos = y + chartHeight - (i / maxValue) * chartHeight
+    pdf.setFontSize(7)
+    pdf.text(i.toString(), margin + 32, yPos, { align: 'right' })
+    pdf.setDrawColor(200, 200, 200)
+    pdf.line(margin + 38, yPos, margin + chartWidth, yPos)
+  }
+  
+  // Barras
+  CATEGORIAS.forEach((cat, i) => {
+    const val = promediosCat[cat.id] ?? 0
+    const barHeight = (val / maxValue) * chartHeight
+    const x = margin + 45 + (i * barWidth)
+    const yBar = y + chartHeight - barHeight
+    
+    pdf.setFillColor(0, 102, 204)
+    pdf.rect(x, yBar, barWidth - 2, barHeight, 'F')
+    
+    pdf.setFontSize(7)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(val.toFixed(1), x + (barWidth - 2) / 2, yBar - 2, { align: 'center' })
+    
+    pdf.setFontSize(6)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text((i + 1).toString(), x + (barWidth - 2) / 2, y + chartHeight + 4, { align: 'center' })
+  })
+  
+  pdf.setFontSize(8)
+  pdf.text('CRITERIOS DE EVALUACIÓN', margin + 45 + (chartWidth - 80) / 2, y + chartHeight + 12, { align: 'center' })
+
+  // PÁGINA DE COMENTARIOS
+  pdf.addPage()
+  y = addHeader(pdf)
+  
+  pdf.setFontSize(11)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text('COMENTARIOS DE LA COMUNIDAD ESTUDIANTIL', margin, y)
+  y += 8
+  
+  pdf.setFontSize(9)
+  pdf.setFont('helvetica', 'normal')
+  
+  if (comentarios && comentarios.length > 0) {
+    comentarios.forEach((com, idx) => {
+      const text = `• "${com.Comentario || com.comentario || 'Sin comentario'}"`
+      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 20)
+      pdf.text(lines, margin + 5, y)
+      y += (lines.length * 5) + 3
+      
+      if (y > pageHeight - 40) {
+        pdf.addPage()
+        y = addHeader(pdf)
+      }
+    })
+  } else {
+    pdf.text('No hay comentarios registrados para este tutor(a).', margin, y)
+  }
+  
+  // Sección de firmas
+  y = pageHeight - 35
+  pdf.setDrawColor(150, 150, 150)
+  pdf.setLineWidth(0.3)
+  
+  pdf.line(margin, y, margin + 60, y)
+  pdf.setFontSize(8)
+  pdf.text(tutor.nombre, margin + 30, y + 4, { align: 'center' })
+  pdf.text('Personal Tutor Evaluado', margin + 30, y + 9, { align: 'center' })
+  
+  pdf.line(pageWidth - margin - 60, y, pageWidth - margin, y)
+  pdf.text('Lic. Marisela Hernández González', pageWidth - margin - 30, y + 4, { align: 'center' })
+  pdf.text('Jefa de División de Ingeniería Informática', pageWidth - margin - 30, y + 9, { align: 'center' })
+  
+  pdf.setFontSize(7)
+  pdf.text('Expediente de material de apoyo de Departamento de Desarrollo Académico', pageWidth / 2, pageHeight - 12, { align: 'center' })
+  
+  // Guardar PDF
+  pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
 }
 
 /* ─── Tarjetas de departamentos (encima de filtros) ──────── */
-function TarjetasDepartamentos({ idPeriodo, onVerDocente }) {
+function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
   const [deptos,  setDeptos]  = useState([])
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
@@ -210,7 +440,7 @@ function TarjetasDepartamentos({ idPeriodo, onVerDocente }) {
 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
                 {[
-                  { lbl:"Docentes",    val:`${d.docentesEvaluados}/${d.totalDocentes}`, sub:`${pctEval}% eval.` },
+                  { lbl:"Tutores",    val:`${d.docentesEvaluados}/${d.totalDocentes}`, sub:`${pctEval}% eval.` },
                   { lbl:"Participación", val:`${d.participacionAlumnos}%`, sub:"alumnos" },
                 ].map(s => (
                   <div key={s.lbl} style={{ background:"#f8faff", borderRadius:8, padding:"6px 8px" }}>
@@ -234,21 +464,21 @@ function TarjetasDepartamentos({ idPeriodo, onVerDocente }) {
 
               {isExp && (
                 <div style={{ marginTop:10, borderTop:`1px solid ${cs.border}`, paddingTop:10, display:"flex", flexDirection:"column", gap:6 }}>
-                  {[...(d.docentes || [])].sort((a,b) => b.promedio - a.promedio).map((doc, rank) => {
-                    const dcs = CLASIF_COLOR[doc.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
+                  {[...(d.docentes || [])].sort((a,b) => b.promedio - a.promedio).map((tutor, rank) => {
+                    const dcs = CLASIF_COLOR[tutor.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
                     const rankIcon = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank+1}.`
                     return (
-                      <div key={doc.id} style={{ background:"#fff", border:"1px solid #e8eeff", borderRadius:8, padding:"8px 10px" }}>
+                      <div key={tutor.id} style={{ background:"#fff", border:"1px solid #e8eeff", borderRadius:8, padding:"8px 10px" }}>
                         <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
                           <span style={{ fontSize:rank<3?13:11, fontWeight:800, minWidth:20 }}>{rankIcon}</span>
-                          <span style={{ fontSize:11, fontWeight:700, color:"#0f172a", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{doc.nombre}</span>
-                          <span style={{ fontSize:13, fontWeight:800, color:dcs.text, flexShrink:0 }}>{doc.promedio?.toFixed(2)}</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:"#0f172a", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{tutor.nombre}</span>
+                          <span style={{ fontSize:13, fontWeight:800, color:dcs.text, flexShrink:0 }}>{tutor.promedio?.toFixed(2)}</span>
                         </div>
                         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
-                          <span style={{ background:dcs.badge, color:dcs.text, borderRadius:4, padding:"1px 6px", fontSize:9, fontWeight:800, textTransform:"uppercase" }}>{doc.clasificacion}</span>
-                          <span style={{ fontSize:10, color:"#94a3b8" }}>{doc.alumnosCompletaron}/{doc.totalAlumnos} alumnos</span>
+                          <span style={{ background:dcs.badge, color:dcs.text, borderRadius:4, padding:"1px 6px", fontSize:9, fontWeight:800, textTransform:"uppercase" }}>{tutor.clasificacion}</span>
+                          <span style={{ fontSize:10, color:"#94a3b8" }}>{tutor.alumnosCompletaron}/{tutor.totalAlumnos} alumnos</span>
                           <button
-                            onClick={() => onVerDocente(doc.id)}
+                            onClick={() => onVerTutor(tutor.id)}
                             style={{ background:"#1e40af", border:"none", borderRadius:5, padding:"3px 8px", fontSize:10, fontWeight:700, color:"#fff", cursor:"pointer" }}
                           >
                             Ver →
@@ -274,12 +504,13 @@ export default function Dashboard() {
   const navigate         = useNavigate()
   const { user, logout } = useAuth()
 
-  const [docentes, setDocentes] = useState([])
+  const [tutores, setTutores] = useState([])
   const [periodos, setPeriodos] = useState([])
   const [grupos,   setGrupos]   = useState([])
+  const [comentarios, setComentarios] = useState([])
 
   const [idDepartamento, setIdDepartamento] = useState("")
-  const [idDocente,      setIdDocente]      = useState("")
+  const [idTutor,        setIdTutor]        = useState("")
   const [idPeriodo,      setIdPeriodo]      = useState("")
   const [idGrupo,        setIdGrupo]        = useState("")
 
@@ -287,27 +518,35 @@ export default function Dashboard() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState(null)
 
-  const [cargandoDocentes, setCargandoDocentes] = useState(true)
+  const [cargandoTutores, setCargandoTutores] = useState(true)
   const [cargandoPeriodos, setCargandoPeriodos] = useState(true)
   const [cargandoGrupos,   setCargandoGrupos]   = useState(false)
-  const [errorDocentes,    setErrorDocentes]     = useState(null)
-  const [errorPeriodos,    setErrorPeriodos]     = useState(null)
-  const [errorGrupos,      setErrorGrupos]       = useState(null)
+  const [errorTutores,     setErrorTutores]     = useState(null)
+  const [errorPeriodos,    setErrorPeriodos]    = useState(null)
+  const [errorGrupos,      setErrorGrupos]      = useState(null)
 
   const [tabAlumnos, setTabAlumnos] = useState("completaron")
   const [vistaGraf,  setVistaGraf]  = useState("barras")
   const [tabActivo,  setTabActivo]  = useState("resultados")
 
-  const departamentos = [...new Set(docentes.map(d => d.departamento || "Sin Departamento"))].sort()
-  const docentesFiltrados = idDepartamento
-    ? docentes.filter(d => (d.departamento || "Sin Departamento") === idDepartamento)
-    : docentes
-  const docenteSeleccionado = docentes.find(d => String(d.id) === String(idDocente))
+  const departamentos = [...new Set(tutores.map(t => t.departamento || "Sin Departamento"))].sort()
+  const tutoresFiltrados = idDepartamento
+    ? tutores.filter(t => (t.departamento || "Sin Departamento") === idDepartamento)
+    : tutores
+  const tutorSeleccionado = tutores.find(t => String(t.id) === String(idTutor))
   
   const grupoLabel = idGrupo ? (() => {
     const grupo = grupos.find(g => String(g.id) === String(idGrupo))
     return grupo ? (grupo.Clave || grupo.clave || `Grupo ${grupo.id}`) : null
   })() : null
+
+  // Cargar comentarios cuando se selecciona un tutor
+  const cargarComentarios = useCallback(async () => {
+    if (idTutor && idPeriodo) {
+      const comentariosData = await getComentariosTutorAPI(Number(idTutor), Number(idPeriodo))
+      setComentarios(comentariosData)
+    }
+  }, [idTutor, idPeriodo])
 
   useEffect(() => {
     if (!user || user.tipo !== "admin") navigate("/login", { replace: true })
@@ -315,11 +554,12 @@ export default function Dashboard() {
 
   const recargarDatos = useCallback(async () => {
     try {
-      const docentesData = await getDocentesAPI()
-      setDocentes(docentesData)
+      const tutoresData = await getDocentesAPI()
+      setTutores(tutoresData)
       const periodosData = await getPeriodosAPI()
-      setPeriodos(periodosData)
-      const activo = periodosData.find(p => p.activo === 1 || p.activo === true)
+      const periodosOrdenados = [...periodosData].sort((a, b) => b.id - a.id)
+      setPeriodos(periodosOrdenados)
+      const activo = periodosOrdenados.find(p => p.activo === 1 || p.activo === true)
       if (activo && !idPeriodo) setIdPeriodo(String(activo.id))
     } catch (err) {
       console.error("Error recargando datos:", err)
@@ -330,19 +570,21 @@ export default function Dashboard() {
     if (!user || user.tipo !== "admin") return
     const cargar = async () => {
       try {
-        setCargandoDocentes(true)
-        setDocentes(await getDocentesAPI())
-        setErrorDocentes(null)
+        setCargandoTutores(true)
+        setTutores(await getDocentesAPI())
+        setErrorTutores(null)
       } catch (err) {
-        setErrorDocentes(err.message)
+        setErrorTutores(err.message)
         if (err.message.includes("401")) navigate("/login", { replace: true })
-      } finally { setCargandoDocentes(false) }
+      } finally { setCargandoTutores(false) }
 
       try {
         setCargandoPeriodos(true)
         const pers = await getPeriodosAPI()
-        setPeriodos(pers); setErrorPeriodos(null)
-        const activo = pers.find(p => p.activo === 1 || p.activo === true)
+        const periodosOrdenados = [...pers].sort((a, b) => b.id - a.id)
+        setPeriodos(periodosOrdenados)
+        setErrorPeriodos(null)
+        const activo = periodosOrdenados.find(p => p.activo === 1 || p.activo === true)
         if (activo) setIdPeriodo(String(activo.id))
       } catch (err) {
         setErrorPeriodos(err.message)
@@ -353,13 +595,13 @@ export default function Dashboard() {
   }, [user, navigate])
 
   useEffect(() => {
-    setIdDocente(""); setIdGrupo(""); setGrupos([]); setResultado(null); setError(null)
+    setIdTutor(""); setIdGrupo(""); setGrupos([]); setResultado(null); setError(null); setComentarios([])
   }, [idDepartamento])
 
   useEffect(() => {
-    if (!idDocente || !idPeriodo) { setGrupos([]); setIdGrupo(""); return }
+    if (!idTutor || !idPeriodo) { setGrupos([]); setIdGrupo(""); return }
     setCargandoGrupos(true)
-    getGruposAPI(Number(idDocente), Number(idPeriodo))
+    getGruposAPI(Number(idTutor), Number(idPeriodo))
       .then(g => { 
         const gruposConClave = g.map(grupo => ({
           ...grupo,
@@ -371,19 +613,29 @@ export default function Dashboard() {
       })
       .catch(err => { setErrorGrupos(err.message); setGrupos([]); setIdGrupo("") })
       .finally(() => setCargandoGrupos(false))
-  }, [idDocente, idPeriodo])
+  }, [idTutor, idPeriodo])
 
   useEffect(() => {
-    if (!idDocente || !idPeriodo) { setResultado(null); setError(null); return }
+    if (!idTutor || !idPeriodo) { setResultado(null); setError(null); return }
     setLoading(true); setError(null); setResultado(null)
-    getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
-      .then(setResultado)
+    getResultadosDocenteAPI(Number(idTutor), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
+      .then(async (data) => {
+        // Transformar la respuesta para usar "tutor" en lugar de "docente"
+        setResultado({
+          ...data,
+          tutor: data.docente,
+          docente: undefined
+        })
+        // Cargar comentarios después de obtener resultados
+        const comentariosData = await getComentariosTutorAPI(Number(idTutor), Number(idPeriodo))
+        setComentarios(comentariosData)
+      })
       .catch(err => { setError(err.message); if (err.message.includes("401")) navigate("/login", { replace: true }) })
       .finally(() => setLoading(false))
-  }, [idDocente, idPeriodo, idGrupo, navigate])
+  }, [idTutor, idPeriodo, idGrupo, navigate])
 
-  const handleVerDocente = useCallback((docId) => {
-    setIdDocente(String(docId))
+  const handleVerTutor = useCallback((tutorId) => {
+    setIdTutor(String(tutorId))
     window.scrollTo({ top: 0, behavior: "smooth" })
   }, [])
 
@@ -498,6 +750,7 @@ export default function Dashboard() {
         .db-exp-btn{height:42px;padding:0 20px;border-radius:10px;border:1.5px solid;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .16s}
         .db-exp-csv{background:#f0fdf4;border-color:#86efac;color:#15803d}.db-exp-csv:hover{background:#dcfce7}
         .db-exp-xls{background:#f0f9ff;border-color:#7dd3fc;color:#0369a1}.db-exp-xls:hover{background:#dbeafe}
+        .db-exp-pdf{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}.db-exp-pdf:hover{background:#fee2e2}
 
         .db-chart-toggle{display:flex;gap:6px;margin-bottom:16px}
         .db-ctoggle-btn{flex:1;padding:7px 0;border-radius:8px;border:1.5px solid #e2e8f0;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:700;cursor:pointer;transition:all .15s;background:#f8faff;color:#64748b}
@@ -565,17 +818,17 @@ export default function Dashboard() {
 
           {tabActivo === "resultados" ? (
             <>
-              <TarjetasDepartamentos idPeriodo={idPeriodo} onVerDocente={handleVerDocente} />
+              <TarjetasDepartamentos idPeriodo={idPeriodo} onVerTutor={handleVerTutor} />
 
               <div className="db-filters">
                 <div className="db-fgroup">
                   <label className="db-flabel"><span className="db-flabel-step">1</span>Departamento</label>
-                  <select className="db-fsel" value={idDepartamento} onChange={e => setIdDepartamento(e.target.value)} disabled={cargandoDocentes || !!errorDocentes}>
-                    {cargandoDocentes ? <option>Cargando…</option> : errorDocentes ? <option>Error al cargar</option> : <>
+                  <select className="db-fsel" value={idDepartamento} onChange={e => setIdDepartamento(e.target.value)} disabled={cargandoTutores || !!errorTutores}>
+                    {cargandoTutores ? <option>Cargando…</option> : errorTutores ? <option>Error al cargar</option> : <>
                       <option value="">— Todos los departamentos —</option>
                       {departamentos.map(dept => (
                         <option key={dept} value={dept}>
-                          {dept} ({docentes.filter(d=>(d.departamento||"Sin Departamento")===dept).length})
+                          {dept} ({tutores.filter(t=>(t.departamento||"Sin Departamento")===dept).length})
                         </option>
                       ))}
                     </>}
@@ -585,11 +838,11 @@ export default function Dashboard() {
                 <div className="db-fsep">›</div>
 
                 <div className="db-fgroup">
-                  <label className="db-flabel"><span className="db-flabel-step">2</span>Docente / Tutor</label>
-                  <select className="db-fsel" value={idDocente} onChange={e => setIdDocente(e.target.value)} disabled={cargandoDocentes || !!errorDocentes}>
-                    {cargandoDocentes ? <option>Cargando…</option> : errorDocentes ? <option>Error</option> : <>
-                      <option value="">{idDepartamento ? `— Docentes (${docentesFiltrados.length}) —` : "— Selecciona un docente —"}</option>
-                      {docentesFiltrados.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                  <label className="db-flabel"><span className="db-flabel-step">2</span>Tutor(a)</label>
+                  <select className="db-fsel" value={idTutor} onChange={e => setIdTutor(e.target.value)} disabled={cargandoTutores || !!errorTutores}>
+                    {cargandoTutores ? <option>Cargando…</option> : errorTutores ? <option>Error</option> : <>
+                      <option value="">{idDepartamento ? `— Tutores (${tutoresFiltrados.length}) —` : "— Selecciona un tutor(a) —"}</option>
+                      {tutoresFiltrados.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
                     </>}
                   </select>
                 </div>
@@ -615,8 +868,8 @@ export default function Dashboard() {
 
                 <div className="db-fgroup">
                   <label className="db-flabel"><span className="db-flabel-step">4</span>Grupo <span style={{ fontWeight:400, textTransform:"none", letterSpacing:0, color:"#94a3b8" }}>(opcional)</span></label>
-                  <select className="db-fsel" value={idGrupo} onChange={e => setIdGrupo(e.target.value)} disabled={!idDocente||!idPeriodo||cargandoGrupos||!!errorGrupos}>
-                    {!idDocente||!idPeriodo ? <option value="">Selecciona docente y periodo</option>
+                  <select className="db-fsel" value={idGrupo} onChange={e => setIdGrupo(e.target.value)} disabled={!idTutor||!idPeriodo||cargandoGrupos||!!errorGrupos}>
+                    {!idTutor||!idPeriodo ? <option value="">Selecciona tutor(a) y periodo</option>
                       : cargandoGrupos ? <option>Cargando grupos…</option>
                       : errorGrupos ? <option>Error al cargar grupos</option>
                       : <>
@@ -632,14 +885,14 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {(idDepartamento || idDocente || idGrupo) && (
+              {(idDepartamento || idTutor || idGrupo) && (
                 <div className="db-breadcrumb">
                   <span>🔍 Filtrando:</span>
                   {idDepartamento && <><span className="db-breadcrumb-sep">›</span><span>Depto. <span className="db-breadcrumb-chip">{idDepartamento}</span></span></>}
-                  {docenteSeleccionado && <><span className="db-breadcrumb-sep">›</span><span>Docente <span className="db-breadcrumb-chip">{docenteSeleccionado.nombre}</span></span></>}
+                  {tutorSeleccionado && <><span className="db-breadcrumb-sep">›</span><span>Tutor(a) <span className="db-breadcrumb-chip">{tutorSeleccionado.nombre}</span></span></>}
                   {grupoLabel && <><span className="db-breadcrumb-sep">›</span><span>Grupo <span className="db-breadcrumb-chip">{grupoLabel}</span></span></>}
                   <button
-                    onClick={() => { setIdDepartamento(""); setIdDocente(""); setIdGrupo(""); setResultado(null); setError(null) }}
+                    onClick={() => { setIdDepartamento(""); setIdTutor(""); setIdGrupo(""); setResultado(null); setError(null) }}
                     style={{ marginLeft:"auto", background:"none", border:"1px solid #bae6fd", borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:700, color:"#0369a1", cursor:"pointer" }}
                   >✕ Limpiar</button>
                 </div>
@@ -648,10 +901,10 @@ export default function Dashboard() {
               {!loading && !error && !resultado && (
                 <div className="db-empty">
                   <div className="db-empty-icon">📊</div>
-                  <p className="db-empty-title">Selecciona un docente para ver su evaluación</p>
+                  <p className="db-empty-title">Selecciona un tutor(a) para ver su evaluación</p>
                   <p className="db-empty-sub">Usa los filtros de arriba o haz clic en "Ver →" desde el ranking de cualquier departamento.</p>
                   <div className="db-empty-steps">
-                    {["Departamento","Docente","Periodo","Grupo (opcional)"].map((s,i) => (
+                    {["Departamento","Tutor(a)","Periodo","Grupo (opcional)"].map((s,i) => (
                       <div key={s} className="db-empty-step"><span className="db-empty-step-num">{i+1}</span>{s}</div>
                     ))}
                   </div>
@@ -666,10 +919,12 @@ export default function Dashboard() {
                   <p className="db-error-title">No se pudieron cargar los resultados</p>
                   <p className="db-error-msg">{error}</p>
                   <button className="db-retry-btn" onClick={() => {
-                    if (idDocente && idPeriodo) {
+                    if (idTutor && idPeriodo) {
                       setLoading(true)
-                      getResultadosDocenteAPI(Number(idDocente), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
-                        .then(setResultado).catch(err => setError(err.message)).finally(() => setLoading(false))
+                      getResultadosDocenteAPI(Number(idTutor), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
+                        .then(data => setResultado({ ...data, tutor: data.docente, docente: undefined }))
+                        .catch(err => setError(err.message))
+                        .finally(() => setLoading(false))
                     }
                   }}>🔄 Reintentar</button>
                 </div>
@@ -686,7 +941,7 @@ export default function Dashboard() {
                           <span className="db-score-max">/ 5.00</span>
                         </div>
                         <div className="db-resumen-info">
-                          <p className="db-resumen-name">{resultado.docente.nombre}</p>
+                          <p className="db-resumen-name">{resultado.tutor.nombre}</p>
                           {idDepartamento && <span className="db-resumen-dept">🏢 {idDepartamento}</span>}
                           <p className="db-resumen-period">{resultado.periodo.nombre}</p>
                           <div className="db-clasif-badge" style={{ background:cs.badge, color:cs.text }}>★ {resultado.clasificacion}</div>
@@ -746,13 +1001,13 @@ export default function Dashboard() {
                       <div className="db-table-wrap">
                         <table className="db-table">
                           <thead>
-                             <tr>
-                               <th>No. Control</th>
-                               <th>Nombre</th>
-                               <th>Grupo</th>
-                               <th>Carrera</th>
-                               <th>Estado</th>
-                             </tr>
+                            <tr>
+                              <th>No. Control</th>
+                              <th>Nombre</th>
+                              <th>Grupo</th>
+                              <th>Carrera</th>
+                              <th>Estado</th>
+                            </tr>
                           </thead>
                           <tbody>
                             {(tabAlumnos === "completaron" ? resultado.completaron : resultado.faltantes).map((a, idx) => (
@@ -784,6 +1039,7 @@ export default function Dashboard() {
                       <div className="db-export-row">
                         <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, grupoLabel)}>📄 Exportar CSV</button>
                         <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, grupoLabel)}>📊 Exportar Excel</button>
+                        <button className="db-exp-btn db-exp-pdf" onClick={() => exportarPDF(resultado, grupoLabel, comentarios)}>📑 Exportar PDF</button>
                       </div>
                     </div>
                   </div>
@@ -793,13 +1049,13 @@ export default function Dashboard() {
                     <div style={{ overflowX:"auto" }}>
                       <table className="db-table" style={{ minWidth:600 }}>
                         <thead>
-                           <tr>
-                             <th style={{ width:30 }}>#</th>
-                             <th>Criterio</th>
-                             <th style={{ width:100, textAlign:"center" }}>Promedio</th>
-                             <th style={{ width:130 }}>Clasificación</th>
-                             <th style={{ width:160 }}>Nivel</th>
-                           </tr>
+                          <tr>
+                            <th style={{ width:30 }}>#</th>
+                            <th>Criterio</th>
+                            <th style={{ width:100, textAlign:"center" }}>Promedio</th>
+                            <th style={{ width:130 }}>Clasificación</th>
+                            <th style={{ width:160 }}>Nivel</th>
+                          </tr>
                         </thead>
                         <tbody>
                           {CATEGORIAS.map((cat, i) => {
@@ -828,7 +1084,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <footer className="db-footer">© 2026 · ITSSNP · Sistema de Evaluación Docente · SWATCorps</footer>
+        <footer className="db-footer">© 2026 · ITSSNP · Sistema de Evaluación Tutorias · SWATCorps</footer>
       </div>
     </>
   )

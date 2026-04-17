@@ -148,14 +148,15 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
   a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
 }
 
-/* ─── Export PDF ─────────────────────────────────────────── */
+/* ─── Export PDF (VERSIÓN CORREGIDA - SIN RECORTES) ─────────────────── */
 async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   if (!resultado) return
   
   const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
   
+  // Usar orientación portrait para mejor legibilidad
   const pdf = new jsPDF({
-    orientation: 'landscape',
+    orientation: 'portrait',
     unit: 'mm',
     format: 'letter'
   })
@@ -166,9 +167,8 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   let y = margin
 
   // Función para agregar encabezado
-  const addHeader = (doc, pageNum = null, totalPages = null) => {
+  const addHeader = (doc) => {
     const w = doc.internal.pageSize.getWidth()
-    const h = 35
     
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
@@ -179,59 +179,60 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     doc.setFontSize(8)
     doc.text('Rev. 01 (ITSSNP-AC-PA-03-8)', w - margin, 32, { align: 'right' })
     
-    if (pageNum && totalPages) {
-      doc.setFontSize(8)
-      doc.text(`Página ${pageNum} de ${totalPages}`, w - margin, pageHeight - 10, { align: 'right' })
-    }
-    
-    return h + 5
+    return 38
   }
 
-  // PORTADA
+  // Función para agregar pie de página
+  const addFooter = (doc, pageNum, totalPages) => {
+    const w = doc.internal.pageSize.getWidth()
+    const h = doc.internal.pageSize.getHeight()
+    doc.setFontSize(8)
+    doc.text(`Página ${pageNum} de ${totalPages}`, w - margin, h - 10, { align: 'right' })
+  }
+
+  // ==================== PORTADA ====================
   pdf.addPage()
   
-  // Título principal
-  pdf.setFontSize(24)
+  pdf.setFontSize(26)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('SISTEMA DE EVALUACIÓN DOCENTE', pageWidth / 2, 80, { align: 'center' })
-  pdf.setFontSize(18)
-  pdf.text('ITSSNP', pageWidth / 2, 95, { align: 'center' })
+  pdf.text('SISTEMA DE EVALUACIÓN', pageWidth / 2, 70, { align: 'center' })
+  pdf.setFontSize(24)
+  pdf.text('DE TUTORÍAS', pageWidth / 2, 85, { align: 'center' })
+  
+  pdf.setFontSize(16)
+  pdf.setFont('helvetica', 'normal')
+  pdf.text('ITSSNP', pageWidth / 2, 105, { align: 'center' })
   
   pdf.setFontSize(14)
-  pdf.setFont('helvetica', 'normal')
-  pdf.text('Resultados de Evaluación de', pageWidth / 2, 120, { align: 'center' })
-  pdf.setFontSize(16)
+  pdf.text('Resultados de Evaluación de', pageWidth / 2, 130, { align: 'center' })
+  pdf.setFontSize(18)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('PERSONA TUTORA', pageWidth / 2, 132, { align: 'center' })
+  pdf.text('PERSONA TUTORA', pageWidth / 2, 145, { align: 'center' })
   
-  // Línea decorativa
   pdf.setDrawColor(0, 102, 204)
-  pdf.setLineWidth(0.5)
-  pdf.line(pageWidth/2 - 50, 142, pageWidth/2 + 50, 142)
+  pdf.setLineWidth(0.8)
+  pdf.line(pageWidth/2 - 60, 158, pageWidth/2 + 60, 158)
   
-  // Información del documento
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'normal')
-  const infoY = 165
+  const infoY = 180
   pdf.text(`División Académica/Departamento: Ingeniería Informática`, margin, infoY)
-  pdf.text(`Periodo a evaluar: ${periodo.nombre}`, margin, infoY + 8)
-  pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, infoY + 16)
-  pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, infoY + 24)
-  pdf.text(`Grupo evaluado: ${grupoLabel || 'Todos los grupos'}`, margin, infoY + 32)
+  pdf.text(`Periodo a evaluar: ${periodo.nombre}`, margin, infoY + 10)
+  pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, infoY + 20)
+  pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, infoY + 30)
+  pdf.text(`Grupo evaluado: ${grupoLabel || 'Todos los grupos'}`, margin, infoY + 40)
   
-  // Fecha de generación
   pdf.setFontSize(9)
-  pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-MX')}`, pageWidth - margin, pageHeight - 20, { align: 'right' })
+  pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-MX')}`, pageWidth - margin, pageHeight - 25, { align: 'right' })
   
-  // Footer portada
   pdf.setFontSize(8)
   pdf.text('C.c.p. Personal Tutor Evaluado – Jefa de División – Expediente de material de apoyo', pageWidth / 2, pageHeight - 15, { align: 'center' })
 
-  // PÁGINA DE RESULTADOS
+  // ==================== PÁGINA DE RESULTADOS ====================
   pdf.addPage()
-  y = addHeader(pdf)
+  let headerHeight = addHeader(pdf)
+  y = headerHeight + 5
   
-  // Tabla de criterios evaluados
   const tableData = CATEGORIAS.map((cat, i) => {
     const val = promediosCat[cat.id] ?? 0
     const cname = clasifFromVal(val)
@@ -243,85 +244,69 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     head: [['#', 'CRITERIO EVALUADO', 'PUNTAJE', 'CLASIFICACIÓN']],
     body: tableData,
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 3, valign: 'middle' },
+    styles: { fontSize: 9, cellPadding: 4, valign: 'middle' },
     headStyles: { fillColor: [0, 102, 204], textColor: [255, 255, 255], fontSize: 10, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [245, 245, 245] },
     columnStyles: {
-      0: { cellWidth: 15, halign: 'center' },
-      1: { cellWidth: 120 },
-      2: { cellWidth: 25, halign: 'center' },
-      3: { cellWidth: 35, halign: 'center' }
-    }
+      0: { cellWidth: 12, halign: 'center' },
+      1: { cellWidth: 100 },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 30, halign: 'center' }
+    },
+    margin: { left: margin, right: margin }
   })
   
   y = pdf.lastAutoTable.finalY + 10
   
-  // Promedio general
   pdf.setFontSize(12)
   pdf.setFont('helvetica', 'bold')
   pdf.text(`PROMEDIO GENERAL: ${promedioGeneral.toFixed(2)} / 5.00`, margin, y)
   pdf.setFontSize(11)
-  pdf.text(`CLASIFICACIÓN: ${clasificacion}`, margin + 100, y)
+  pdf.text(`CLASIFICACIÓN: ${clasificacion}`, margin + 95, y)
   
   y += 15
   
-  // Gráfica de resultados
   pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
   pdf.text('RESULTADOS REPRESENTADOS CON GRÁFICA', margin, y)
-  y += 5
+  y += 8
   
-  // Dibujar gráfica de barras simple
-  const chartWidth = pageWidth - (margin * 2)
-  const chartHeight = 70
-  const barWidth = (chartWidth - 80) / CATEGORIAS.length
-  const maxValue = 5
+  const chartWidth = pageWidth - (margin * 2) - 50
+  const barHeight = 5
   
-  // Eje Y
-  pdf.setDrawColor(150, 150, 150)
-  pdf.setLineWidth(0.2)
-  pdf.line(margin + 40, y, margin + 40, y + chartHeight)
-  pdf.line(margin + 40, y + chartHeight, margin + chartWidth, y + chartHeight)
-  
-  // Etiquetas del eje Y
-  for (let i = 0; i <= 5; i++) {
-    const yPos = y + chartHeight - (i / maxValue) * chartHeight
-    pdf.setFontSize(7)
-    pdf.text(i.toString(), margin + 32, yPos, { align: 'right' })
-    pdf.setDrawColor(200, 200, 200)
-    pdf.line(margin + 38, yPos, margin + chartWidth, yPos)
-  }
-  
-  // Barras
   CATEGORIAS.forEach((cat, i) => {
     const val = promediosCat[cat.id] ?? 0
-    const barHeight = (val / maxValue) * chartHeight
-    const x = margin + 45 + (i * barWidth)
-    const yBar = y + chartHeight - barHeight
+    const barWidthChart = (val / 5) * chartWidth
     
-    pdf.setFillColor(0, 102, 204)
-    pdf.rect(x, yBar, barWidth - 2, barHeight, 'F')
+    pdf.setFontSize(7)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text(`${i+1}.`, margin + 2, y + 3)
+    
+    pdf.setFillColor(CAT_COLORS[i % CAT_COLORS.length])
+    pdf.rect(margin + 12, y, barWidthChart, barHeight, 'F')
     
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'bold')
-    pdf.text(val.toFixed(1), x + (barWidth - 2) / 2, yBar - 2, { align: 'center' })
+    pdf.text(val.toFixed(1), margin + 12 + barWidthChart + 3, y + 3)
     
-    pdf.setFontSize(6)
-    pdf.setFont('helvetica', 'normal')
-    pdf.text((i + 1).toString(), x + (barWidth - 2) / 2, y + chartHeight + 4, { align: 'center' })
+    y += 7
+    
+    if (y > pageHeight - 40 && i < CATEGORIAS.length - 1) {
+      pdf.addPage()
+      y = addHeader(pdf) + 5
+    }
   })
   
-  pdf.setFontSize(8)
-  pdf.text('CRITERIOS DE EVALUACIÓN', margin + 45 + (chartWidth - 80) / 2, y + chartHeight + 12, { align: 'center' })
+  y += 10
 
-  // PÁGINA DE COMENTARIOS
+  // ==================== PÁGINA DE COMENTARIOS ====================
   pdf.addPage()
-  y = addHeader(pdf)
+  y = addHeader(pdf) + 5
   
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'bold')
   pdf.text('COMENTARIOS DE LA COMUNIDAD ESTUDIANTIL', margin, y)
-  y += 8
+  y += 10
   
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
@@ -329,37 +314,46 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   if (comentarios && comentarios.length > 0) {
     comentarios.forEach((com, idx) => {
       const text = `• "${com.Comentario || com.comentario || 'Sin comentario'}"`
-      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 20)
+      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 10)
       pdf.text(lines, margin + 5, y)
-      y += (lines.length * 5) + 3
+      y += (lines.length * 5) + 5
       
-      if (y > pageHeight - 40) {
+      if (y > pageHeight - 50) {
         pdf.addPage()
-        y = addHeader(pdf)
+        y = addHeader(pdf) + 5
       }
     })
   } else {
     pdf.text('No hay comentarios registrados para este tutor(a).', margin, y)
+    y += 10
   }
   
-  // Sección de firmas
-  y = pageHeight - 35
-  pdf.setDrawColor(150, 150, 150)
-  pdf.setLineWidth(0.3)
+  const signatureY = pageHeight - 35
+  if (y < signatureY) {
+    pdf.setDrawColor(150, 150, 150)
+    pdf.setLineWidth(0.3)
+    
+    pdf.line(margin, signatureY, margin + 60, signatureY)
+    pdf.setFontSize(8)
+    pdf.text(tutor.nombre, margin + 30, signatureY + 4, { align: 'center' })
+    pdf.text('Personal Tutor Evaluado', margin + 30, signatureY + 9, { align: 'center' })
+    
+    pdf.line(pageWidth - margin - 60, signatureY, pageWidth - margin, signatureY)
+    pdf.text('Lic. Marisela Hernández González', pageWidth - margin - 30, signatureY + 4, { align: 'center' })
+    pdf.text('Jefa de División de Ingeniería Informática', pageWidth - margin - 30, signatureY + 9, { align: 'center' })
+    
+    pdf.setFontSize(7)
+    pdf.text('Expediente de material de apoyo de Departamento de Desarrollo Académico', pageWidth / 2, pageHeight - 12, { align: 'center' })
+  }
   
-  pdf.line(margin, y, margin + 60, y)
-  pdf.setFontSize(8)
-  pdf.text(tutor.nombre, margin + 30, y + 4, { align: 'center' })
-  pdf.text('Personal Tutor Evaluado', margin + 30, y + 9, { align: 'center' })
+  const pageCount = pdf.internal.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    pdf.setPage(i)
+    if (i > 1) {
+      addFooter(pdf, i - 1, pageCount - 1)
+    }
+  }
   
-  pdf.line(pageWidth - margin - 60, y, pageWidth - margin, y)
-  pdf.text('Lic. Marisela Hernández González', pageWidth - margin - 30, y + 4, { align: 'center' })
-  pdf.text('Jefa de División de Ingeniería Informática', pageWidth - margin - 30, y + 9, { align: 'center' })
-  
-  pdf.setFontSize(7)
-  pdf.text('Expediente de material de apoyo de Departamento de Desarrollo Académico', pageWidth / 2, pageHeight - 12, { align: 'center' })
-  
-  // Guardar PDF
   pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
 }
 
@@ -540,7 +534,6 @@ export default function Dashboard() {
     return grupo ? (grupo.Clave || grupo.clave || `Grupo ${grupo.id}`) : null
   })() : null
 
-  // Cargar comentarios cuando se selecciona un tutor
   const cargarComentarios = useCallback(async () => {
     if (idTutor && idPeriodo) {
       const comentariosData = await getComentariosTutorAPI(Number(idTutor), Number(idPeriodo))
@@ -557,6 +550,7 @@ export default function Dashboard() {
       const tutoresData = await getDocentesAPI()
       setTutores(tutoresData)
       const periodosData = await getPeriodosAPI()
+      // ORDENAR PERIODOS: más reciente primero (descendente por id)
       const periodosOrdenados = [...periodosData].sort((a, b) => b.id - a.id)
       setPeriodos(periodosOrdenados)
       const activo = periodosOrdenados.find(p => p.activo === 1 || p.activo === true)
@@ -581,6 +575,7 @@ export default function Dashboard() {
       try {
         setCargandoPeriodos(true)
         const pers = await getPeriodosAPI()
+        // ORDENAR PERIODOS: más reciente primero (descendente por id)
         const periodosOrdenados = [...pers].sort((a, b) => b.id - a.id)
         setPeriodos(periodosOrdenados)
         setErrorPeriodos(null)
@@ -620,13 +615,11 @@ export default function Dashboard() {
     setLoading(true); setError(null); setResultado(null)
     getResultadosDocenteAPI(Number(idTutor), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
       .then(async (data) => {
-        // Transformar la respuesta para usar "tutor" en lugar de "docente"
         setResultado({
           ...data,
           tutor: data.docente,
           docente: undefined
         })
-        // Cargar comentarios después de obtener resultados
         const comentariosData = await getComentariosTutorAPI(Number(idTutor), Number(idPeriodo))
         setComentarios(comentariosData)
       })
@@ -770,7 +763,6 @@ export default function Dashboard() {
         </nav>
 
         <div className="db-body">
-          {/* Tabs de navegación */}
           <div style={{
             display: 'flex',
             gap: '12px',

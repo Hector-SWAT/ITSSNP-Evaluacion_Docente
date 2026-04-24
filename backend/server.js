@@ -223,8 +223,9 @@ function soloAdmin(req, res, next) {
   next()
 }
 
+
 /* ══════════════════════════════════════════════════════════════
-   AUTH — POST /api/auth/login (CORREGIDO - USA EL PROCEDIMIENTO)
+   AUTH — POST /api/auth/login (CORREGIDO - USA SP CORRECTAMENTE)
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
   // Aceptar múltiples nombres de campos
@@ -233,11 +234,8 @@ app.post("/api/auth/login", async (req, res) => {
   
   console.log("=== LOGIN ATTEMPT ===")
   console.log("Body recibido:", JSON.stringify(req.body))
-  console.log("Usuario extraído:", usuario)
-  console.log("Password recibida:", password ? "***" : "NO")
   
   if (!usuario || !password) {
-    console.log("Login fallido: Faltan credenciales")
     return res.status(401).json({ error: "Credenciales inválidas" })
   }
 
@@ -250,43 +248,37 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     // 1. Verificar administradores
     const adminRow = await executeQuerySingle(
-      `SELECT IdAdmin AS id_admin, Usuario AS usuario, NombreCompleto AS nombre,
-              Clave AS clave, Activo AS activo
+      `SELECT IdAdmin, NombreCompleto, Clave 
        FROM eval.UsuarioAdmin WHERE Usuario = ? AND Activo = 1`,
       [usuario.toLowerCase()]
     )
 
     if (adminRow) {
-      console.log("Admin encontrado, verificando contraseña...")
-      if (hashAdmin === adminRow.clave) {
-        console.log("✅ Admin login exitoso:", adminRow.usuario)
+      if (hashAdmin === adminRow.Clave) {
         const token = jwt.sign(
-          { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre },
+          { tipo: "admin", id: adminRow.IdAdmin, nombre: adminRow.NombreCompleto },
           JWT_SECRET,
           { expiresIn: "8h" }
         )
         return res.json({
           tipo_usuario: "admin",
           num_control: null,
-          nombre_completo: adminRow.nombre,
+          nombre_completo: adminRow.NombreCompleto,
           token
         })
-      } else {
-        console.log("Contraseña de admin incorrecta")
-        return res.status(401).json({ error: "Credenciales inválidas" })
       }
-    }
-
-    // 2. Verificar alumnos - usando el PROCEDIMIENTO ALMACENADO
-    const numControl = Number(usuario)
-    if (isNaN(numControl)) {
-      console.log("Login fallido: Usuario no es número válido")
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
-    // Ejecutar el procedimiento almacenado sp_LoginAlumno
-    const connection = await getConnection()
-    const request = connection.request()
+    // 2. Verificar alumnos - usando el SP
+    const numControl = Number(usuario)
+    if (isNaN(numControl)) {
+      return res.status(401).json({ error: "Credenciales inválidas" })
+    }
+
+    // Ejecutar el SP correctamente
+    const poolConn = await getConnection()
+    const request = poolConn.request()
     
     // Parámetros de entrada
     request.input('NumControl', sql.Int, numControl)
@@ -301,15 +293,23 @@ app.post("/api/auth/login", async (req, res) => {
     // Ejecutar
     const result = await request.execute('sp_LoginAlumno')
     
-    // Obtener resultados
+    // IMPORTANTE: Leer los parámetros de salida correctamente
     const success = result.output.Success
-    const mensaje = result.output.Mensaje
+    const mensajeSP = result.output.Mensaje
     const nombreCompleto = result.output.NombreCompleto
     const idPerio = result.output.IdPerio
     
-    console.log("Resultado SP:", { success, mensaje, nombreCompleto, idPerio })
+    console.log("SP Output:", { 
+      success: success, 
+      mensaje: mensajeSP, 
+      nombreCompleto: nombreCompleto,
+      idPerio: idPerio,
+      tipoSuccess: typeof success,
+      valorSuccess: success
+    })
     
-    if (success === 1 && nombreCompleto) {
+    // Verificar si el login fue exitoso (Success = 1)
+    if (success === true || success === 1) {
       console.log("✅ Alumno login exitoso:", numControl)
       
       const token = jwt.sign(
@@ -326,12 +326,12 @@ app.post("/api/auth/login", async (req, res) => {
         token
       })
     } else {
-      console.log("❌ Login fallido:", mensaje)
-      return res.status(401).json({ error: mensaje || "Credenciales inválidas" })
+      console.log("❌ Login fallido:", mensajeSP)
+      return res.status(401).json({ error: mensajeSP || "Credenciales inválidas" })
     }
     
   } catch (err) {
-    console.error("Error en /api/auth/login:", err)
+    console.error("Error en login:", err)
     return res.status(500).json({ error: "Error interno del servidor" })
   }
 })

@@ -274,8 +274,7 @@ function soloAdmin(req, res, next) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   AUTH — POST /api/auth/login (MULTI-FORMATO)
-   Acepta: usuario/numControl y password/curp
+   AUTH — POST /api/auth/login (USANDO SP_LoginAlumno)
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
   // Aceptar múltiples nombres de campos
@@ -296,11 +295,11 @@ app.post("/api/auth/login", async (req, res) => {
   usuario = String(usuario).trim()
   password = String(password).trim()
   
-  // Hash SHA256 para admin (formato estándar)
-  const hashInputSHA256 = crypto.createHash("sha256").update(password).digest("hex")
+  // Hash para admin (SHA256)
+  const hashAdmin = crypto.createHash("sha256").update(password).digest("hex")
 
   try {
-    // 1. Verificar administradores
+    // 1. Verificar administradores (directo en SQL)
     const adminRow = await executeQuerySingle(
       `SELECT IdAdmin AS id_admin, Usuario AS usuario, NombreCompleto AS nombre,
               Clave AS clave, Activo AS activo
@@ -310,7 +309,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (adminRow) {
       console.log("Admin encontrado, verificando contraseña...")
-      if (hashInputSHA256 === adminRow.clave || comparePassword(password, adminRow.clave)) {
+      if (hashAdmin === adminRow.clave) {
         console.log("✅ Admin login exitoso:", adminRow.usuario)
         const token = jwt.sign(
           { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre },
@@ -329,59 +328,59 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
-    // 2. Verificar alumnos
+    // 2. Verificar alumnos usando el PROCEDIMIENTO ALMACENADO
     const numControl = Number(usuario)
     if (isNaN(numControl)) {
       console.log("Login fallido: Usuario no es número válido")
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
-    const alumno = await executeQuerySingle(
-      `SELECT NumControl, NombreCompleto, Clave FROM dbo.Alumno WHERE NumControl = ? AND Situacion = 1`,
-      [numControl]
-    )
-
-    if (!alumno) {
-      console.log("Login fallido: Alumno no encontrado:", numControl)
-      return res.status(401).json({ error: "Credenciales inválidas" })
-    }
-
-    console.log("Alumno encontrado:", alumno.NumControl, alumno.NombreCompleto)
-    console.log("Hash almacenado (primeros 10 chars):", alumno.Clave?.substring(0, 10))
+    // Ejecutar el procedimiento almacenado sp_LoginAlumno
+    const connection = await getConnection()
+    const request = connection.request()
     
-    // Comparar usando múltiples formatos de hash
-    const passwordMatches = comparePassword(password, alumno.Clave)
+    // Parámetros de entrada
+    request.input('NumControl', sql.Int, numControl)
+    request.input('CURP', sql.NVarChar(18), password.toUpperCase())
     
-    if (!passwordMatches) {
-      console.log("Contraseña incorrecta para alumno:", numControl)
-      // Log para debugging
-      const testSHA1 = generateHashSHA1(password.toUpperCase())
-      const testSHA1Lower = generateHashSHA1(password.toLowerCase())
-      console.log(`Hash SHA1 (upper): ${testSHA1}`)
-      console.log(`Hash SHA1 (lower): ${testSHA1Lower}`)
-      console.log(`Hash almacenado: ${alumno.Clave}`)
-      return res.status(401).json({ error: "Credenciales inválidas" })
+    // Parámetros de salida
+    request.output('Success', sql.Bit)
+    request.output('Mensaje', sql.NVarChar(255))
+    request.output('NombreCompleto', sql.NVarChar(70))
+    request.output('IdPerio', sql.Int)
+    
+    // Ejecutar el procedimiento
+    const result = await request.execute('sp_LoginAlumno')
+    
+    // Obtener valores de salida
+    const success = result.output.Success
+    const mensaje = result.output.Mensaje
+    const nombreCompleto = result.output.NombreCompleto
+    const idPerio = result.output.IdPerio
+    
+    console.log("Resultado sp_LoginAlumno:", { success, mensaje, nombreCompleto, idPerio })
+    
+    if (success === 1) {
+      console.log("✅ Alumno login exitoso:", numControl)
+      
+      const token = jwt.sign(
+        { tipo: "alumno", id: numControl, nombre: nombreCompleto },
+        JWT_SECRET,
+        { expiresIn: "4h" }
+      )
+      
+      return res.json({
+        tipo_usuario: "alumno",
+        num_control: numControl,
+        nombre_completo: nombreCompleto,
+        id_perio: idPerio,
+        token
+      })
+    } else {
+      console.log("❌ Login fallido:", mensaje)
+      return res.status(401).json({ error: mensaje || "Credenciales inválidas" })
     }
-
-    console.log("✅ Alumno login exitoso:", numControl)
-
-    const periodo = await executeQuerySingle(
-      `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`
-    )
-
-    const token = jwt.sign(
-      { tipo: "alumno", id: alumno.NumControl, nombre: alumno.NombreCompleto },
-      JWT_SECRET,
-      { expiresIn: "4h" }
-    )
-
-    return res.json({
-      tipo_usuario: "alumno",
-      num_control: alumno.NumControl,
-      nombre_completo: alumno.NombreCompleto,
-      id_perio: periodo?.IdPerio ?? null,
-      token
-    })
+    
   } catch (err) {
     console.error("Error en /api/auth/login:", err)
     return res.status(500).json({ error: "Error interno del servidor" })

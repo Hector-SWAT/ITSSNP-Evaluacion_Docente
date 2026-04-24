@@ -139,56 +139,6 @@ async function executeQuerySingle(query, params = []) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   FUNCIONES DE HASH (soporta múltiples formatos)
-══════════════════════════════════════════════════════════════ */
-function generateHashSHA1(text) {
-  return crypto.createHash("sha1").update(text).digest("hex").toUpperCase()
-}
-
-function generateHashSHA256(text) {
-  return crypto.createHash("sha256").update(text).digest("hex").toLowerCase()
-}
-
-function generateHashMD5(text) {
-  return crypto.createHash("md5").update(text).digest("hex").toLowerCase()
-}
-
-// Compara una contraseña con un hash almacenado (detecta automáticamente el formato)
-function comparePassword(password, storedHash) {
-  if (!storedHash) return false
-  
-  const passwordUpper = password.toUpperCase()
-  const passwordLower = password.toLowerCase()
-  const storedUpper = storedHash.toUpperCase()
-  const storedLower = storedHash.toLowerCase()
-  
-  // Probar diferentes formatos de hash
-  const hashes = [
-    generateHashSHA1(passwordUpper),
-    generateHashSHA1(passwordLower),
-    generateHashSHA1(password),
-    generateHashSHA256(password),  
-    generateHashMD5(password),
-    crypto.createHash("sha256").update(passwordUpper).digest("hex").toUpperCase(), // SHA256 con MAYÚSCULAS
-    // Hash directos sin conversión
-    passwordUpper,
-    passwordLower,
-    password
-  ]
-  
-  // Eliminar duplicados
-  const uniqueHashes = [...new Set(hashes)]
-  
-  for (const hash of uniqueHashes) {
-    if (hash === storedUpper || hash === storedLower) {
-      return true
-    }
-  }
-  
-  return false
-}
-
-/* ══════════════════════════════════════════════════════════════
    HEALTH CHECKS
 ══════════════════════════════════════════════════════════════ */
 if (process.env.NODE_ENV !== "production") {
@@ -274,7 +224,7 @@ function soloAdmin(req, res, next) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   AUTH — POST /api/auth/login (USANDO SP_LoginAlumno)
+   AUTH — POST /api/auth/login (CORREGIDO - USA EL PROCEDIMIENTO)
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
   // Aceptar múltiples nombres de campos
@@ -291,7 +241,6 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(401).json({ error: "Credenciales inválidas" })
   }
 
-  // Limpiar valores
   usuario = String(usuario).trim()
   password = String(password).trim()
   
@@ -328,62 +277,58 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
-    // 2. Verificar alumnos
+    // 2. Verificar alumnos - usando el PROCEDIMIENTO ALMACENADO
     const numControl = Number(usuario)
     if (isNaN(numControl)) {
       console.log("Login fallido: Usuario no es número válido")
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
-    // Obtener el alumno directamente (sin SP)
-    const alumno = await executeQuerySingle(
-      `SELECT NumControl, NombreCompleto, Clave FROM dbo.ALUMNO WHERE NumControl = ? AND Situacion = 1`,
-      [numControl]
-    )
-
-    if (!alumno) {
-      console.log("Login fallido: Alumno no encontrado:", numControl)
-      return res.status(401).json({ error: "Credenciales inválidas" })
-    }
-
-    console.log("Alumno encontrado:", alumno.NumControl, alumno.NombreCompleto)
-    console.log("Hash en BD:", alumno.Clave)
+    // Ejecutar el procedimiento almacenado sp_LoginAlumno
+    const connection = await getConnection()
+    const request = connection.request()
     
-    // Generar hash SHA256 en MAYÚSCULAS
-    const passwordUpper = password.toUpperCase()
-    const hashGenerado = crypto.createHash("sha256").update(passwordUpper).digest("hex").toUpperCase()
-
-    console.log("Password en mayúsculas:", passwordUpper)
-    console.log("Hash generado:", hashGenerado)
-    console.log("¿Coinciden?", hashGenerado === alumno.Clave)
-
-    if (hashGenerado !== alumno.Clave) {
-      console.log("❌ Contraseña incorrecta")
-      return res.status(401).json({ error: "Credenciales inválidas" })
+    // Parámetros de entrada
+    request.input('NumControl', sql.Int, numControl)
+    request.input('CURP', sql.NVarChar(18), password.toUpperCase())
+    
+    // Parámetros de salida
+    request.output('Success', sql.Bit)
+    request.output('Mensaje', sql.NVarChar(255))
+    request.output('NombreCompleto', sql.NVarChar(70))
+    request.output('IdPerio', sql.Int)
+    
+    // Ejecutar
+    const result = await request.execute('sp_LoginAlumno')
+    
+    // Obtener resultados
+    const success = result.output.Success
+    const mensaje = result.output.Mensaje
+    const nombreCompleto = result.output.NombreCompleto
+    const idPerio = result.output.IdPerio
+    
+    console.log("Resultado SP:", { success, mensaje, nombreCompleto, idPerio })
+    
+    if (success === 1 && nombreCompleto) {
+      console.log("✅ Alumno login exitoso:", numControl)
+      
+      const token = jwt.sign(
+        { tipo: "alumno", id: numControl, nombre: nombreCompleto },
+        JWT_SECRET,
+        { expiresIn: "4h" }
+      )
+      
+      return res.status(200).json({
+        tipo_usuario: "alumno",
+        num_control: numControl,
+        nombre_completo: nombreCompleto,
+        id_perio: idPerio,
+        token
+      })
+    } else {
+      console.log("❌ Login fallido:", mensaje)
+      return res.status(401).json({ error: mensaje || "Credenciales inválidas" })
     }
-
-    console.log("✅ Alumno login exitoso:", numControl)
-
-    // Obtener periodo activo
-    const periodo = await executeQuerySingle(
-      `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`
-    )
-
-    // Generar token JWT
-    const token = jwt.sign(
-      { tipo: "alumno", id: alumno.NumControl, nombre: alumno.NombreCompleto },
-      JWT_SECRET,
-      { expiresIn: "4h" }
-    )
-
-    // ✅ RESPONDER CON CÓDIGO 200 Y EL TOKEN
-    return res.status(200).json({
-      tipo_usuario: "alumno",
-      num_control: alumno.NumControl,
-      nombre_completo: alumno.NombreCompleto,
-      id_perio: periodo?.IdPerio ?? null,
-      token
-    })
     
   } catch (err) {
     console.error("Error en /api/auth/login:", err)
@@ -392,26 +337,42 @@ app.post("/api/auth/login", async (req, res) => {
 })
 
 /* ══════════════════════════════════════════════════════════════
-   Endpoint de prueba para verificar hashes
+   Endpoint de diagnóstico para probar el SP
 ══════════════════════════════════════════════════════════════ */
-app.post("/api/test-hash", async (req, res) => {
-  const { password, storedHash } = req.body
+app.post("/api/test-sp", async (req, res) => {
+  const { numControl, curp } = req.body;
   
-  if (!password) {
-    return res.status(400).json({ error: "Se requiere password" })
+  if (!numControl || !curp) {
+    return res.status(400).json({ error: "Faltan numControl o curp" });
   }
   
-  const results = {
-    password: password,
-    sha1_upper: generateHashSHA1(password.toUpperCase()),
-    sha1_lower: generateHashSHA1(password.toLowerCase()),
-    sha1_original: generateHashSHA1(password),
-    sha256: generateHashSHA256(password),
-    md5: generateHashMD5(password),
-    matches_stored: storedHash ? comparePassword(password, storedHash) : null
+  try {
+    const connection = await getConnection()
+    const request = connection.request()
+    
+    request.input('NumControl', sql.Int, numControl)
+    request.input('CURP', sql.NVarChar(18), curp.toUpperCase())
+    request.output('Success', sql.Bit)
+    request.output('Mensaje', sql.NVarChar(255))
+    request.output('NombreCompleto', sql.NVarChar(70))
+    request.output('IdPerio', sql.Int)
+    
+    const result = await request.execute('sp_LoginAlumno')
+    
+    res.json({
+      success: result.output.Success === 1,
+      mensaje: result.output.Mensaje,
+      nombreCompleto: result.output.NombreCompleto,
+      idPerio: result.output.IdPerio,
+      debug: {
+        numControlEnviado: numControl,
+        curpEnviada: curp,
+        curpMayusculas: curp.toUpperCase()
+      }
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
-  
-  res.json(results)
 })
 
 /* ══════════════════════════════════════════════════════════════

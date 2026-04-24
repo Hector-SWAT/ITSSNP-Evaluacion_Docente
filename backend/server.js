@@ -299,7 +299,7 @@ app.post("/api/auth/login", async (req, res) => {
   const hashAdmin = crypto.createHash("sha256").update(password).digest("hex")
 
   try {
-    // 1. Verificar administradores (directo en SQL)
+    // 1. Verificar administradores
     const adminRow = await executeQuerySingle(
       `SELECT IdAdmin AS id_admin, Usuario AS usuario, NombreCompleto AS nombre,
               Clave AS clave, Activo AS activo
@@ -328,58 +328,62 @@ app.post("/api/auth/login", async (req, res) => {
       }
     }
 
-    // 2. Verificar alumnos usando el PROCEDIMIENTO ALMACENADO
+    // 2. Verificar alumnos
     const numControl = Number(usuario)
     if (isNaN(numControl)) {
       console.log("Login fallido: Usuario no es número válido")
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
-    // Ejecutar el procedimiento almacenado sp_LoginAlumno
-    const connection = await getConnection()
-    const request = connection.request()
-    
-    // Parámetros de entrada
-    request.input('NumControl', sql.Int, numControl)
-    request.input('CURP', sql.NVarChar(18), password.toUpperCase())
-    
-    // Parámetros de salida
-    request.output('Success', sql.Bit)
-    request.output('Mensaje', sql.NVarChar(255))
-    request.output('NombreCompleto', sql.NVarChar(70))
-    request.output('IdPerio', sql.Int)
-    
-    // Ejecutar el procedimiento
-    const result = await request.execute('sp_LoginAlumno')
-    
-    // Obtener valores de salida
-    const success = result.output.Success
-    const mensaje = result.output.Mensaje
-    const nombreCompleto = result.output.NombreCompleto
-    const idPerio = result.output.IdPerio
-    
-    console.log("Resultado sp_LoginAlumno:", { success, mensaje, nombreCompleto, idPerio })
-    
-    if (success === 1) {
-      console.log("✅ Alumno login exitoso:", numControl)
-      
-      const token = jwt.sign(
-        { tipo: "alumno", id: numControl, nombre: nombreCompleto },
-        JWT_SECRET,
-        { expiresIn: "4h" }
-      )
-      
-      return res.json({
-        tipo_usuario: "alumno",
-        num_control: numControl,
-        nombre_completo: nombreCompleto,
-        id_perio: idPerio,
-        token
-      })
-    } else {
-      console.log("❌ Login fallido:", mensaje)
-      return res.status(401).json({ error: mensaje || "Credenciales inválidas" })
+    // Obtener el alumno directamente (sin SP)
+    const alumno = await executeQuerySingle(
+      `SELECT NumControl, NombreCompleto, Clave FROM dbo.ALUMNO WHERE NumControl = ? AND Situacion = 1`,
+      [numControl]
+    )
+
+    if (!alumno) {
+      console.log("Login fallido: Alumno no encontrado:", numControl)
+      return res.status(401).json({ error: "Credenciales inválidas" })
     }
+
+    console.log("Alumno encontrado:", alumno.NumControl, alumno.NombreCompleto)
+    console.log("Hash en BD:", alumno.Clave)
+    
+    // Generar hash SHA256 en MAYÚSCULAS
+    const passwordUpper = password.toUpperCase()
+    const hashGenerado = crypto.createHash("sha256").update(passwordUpper).digest("hex").toUpperCase()
+
+    console.log("Password en mayúsculas:", passwordUpper)
+    console.log("Hash generado:", hashGenerado)
+    console.log("¿Coinciden?", hashGenerado === alumno.Clave)
+
+    if (hashGenerado !== alumno.Clave) {
+      console.log("❌ Contraseña incorrecta")
+      return res.status(401).json({ error: "Credenciales inválidas" })
+    }
+
+    console.log("✅ Alumno login exitoso:", numControl)
+
+    // Obtener periodo activo
+    const periodo = await executeQuerySingle(
+      `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`
+    )
+
+    // Generar token JWT
+    const token = jwt.sign(
+      { tipo: "alumno", id: alumno.NumControl, nombre: alumno.NombreCompleto },
+      JWT_SECRET,
+      { expiresIn: "4h" }
+    )
+
+    // ✅ RESPONDER CON CÓDIGO 200 Y EL TOKEN
+    return res.status(200).json({
+      tipo_usuario: "alumno",
+      num_control: alumno.NumControl,
+      nombre_completo: alumno.NombreCompleto,
+      id_perio: periodo?.IdPerio ?? null,
+      token
+    })
     
   } catch (err) {
     console.error("Error en /api/auth/login:", err)

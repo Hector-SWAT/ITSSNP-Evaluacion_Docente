@@ -11,7 +11,6 @@ const sql = require("mssql")
 const jwt = require("jsonwebtoken")
 const crypto = require("crypto")
 const cors = require("cors")
-const path = require("path")
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -46,6 +45,7 @@ const corsOptions = {
     if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
+      console.log(`CORS bloqueado: ${origin}`)
       callback(new Error("No permitido por CORS"))
     }
   },
@@ -139,7 +139,56 @@ async function executeQuerySingle(query, params = []) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   HEALTH CHECKS (solo en desarrollo)
+   FUNCIONES DE HASH (soporta múltiples formatos)
+══════════════════════════════════════════════════════════════ */
+function generateHashSHA1(text) {
+  return crypto.createHash("sha1").update(text).digest("hex").toUpperCase()
+}
+
+function generateHashSHA256(text) {
+  return crypto.createHash("sha256").update(text).digest("hex").toLowerCase()
+}
+
+function generateHashMD5(text) {
+  return crypto.createHash("md5").update(text).digest("hex").toLowerCase()
+}
+
+// Compara una contraseña con un hash almacenado (detecta automáticamente el formato)
+function comparePassword(password, storedHash) {
+  if (!storedHash) return false
+  
+  const passwordUpper = password.toUpperCase()
+  const passwordLower = password.toLowerCase()
+  const storedUpper = storedHash.toUpperCase()
+  const storedLower = storedHash.toLowerCase()
+  
+  // Probar diferentes formatos de hash
+  const hashes = [
+    generateHashSHA1(passwordUpper),
+    generateHashSHA1(passwordLower),
+    generateHashSHA1(password),
+    generateHashSHA256(password),
+    generateHashMD5(password),
+    // Hash directos sin conversión
+    passwordUpper,
+    passwordLower,
+    password
+  ]
+  
+  // Eliminar duplicados
+  const uniqueHashes = [...new Set(hashes)]
+  
+  for (const hash of uniqueHashes) {
+    if (hash === storedUpper || hash === storedLower) {
+      return true
+    }
+  }
+  
+  return false
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HEALTH CHECKS
 ══════════════════════════════════════════════════════════════ */
 if (process.env.NODE_ENV !== "production") {
   app.get("/api/ping", (req, res) => {
@@ -224,61 +273,96 @@ function soloAdmin(req, res, next) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   AUTH — POST /api/auth/login (mensajes genéricos de error)
+   AUTH — POST /api/auth/login (MULTI-FORMATO)
+   Acepta: usuario/numControl y password/curp
 ══════════════════════════════════════════════════════════════ */
 app.post("/api/auth/login", async (req, res) => {
-  const { usuario, password } = req.body
+  // Aceptar múltiples nombres de campos
+  let usuario = req.body.usuario || req.body.numControl
+  let password = req.body.password || req.body.curp
+  
+  console.log("=== LOGIN ATTEMPT ===")
+  console.log("Body recibido:", JSON.stringify(req.body))
+  console.log("Usuario extraído:", usuario)
+  console.log("Password recibida:", password ? "***" : "NO")
+  
   if (!usuario || !password) {
-    return res.status(400).json({ error: "Credenciales inválidas" })
+    console.log("Login fallido: Faltan credenciales")
+    return res.status(401).json({ error: "Credenciales inválidas" })
   }
 
+  // Limpiar valores
+  usuario = String(usuario).trim()
+  password = String(password).trim()
+  
+  // Hash SHA256 para admin (formato estándar)
   const hashInputSHA256 = crypto.createHash("sha256").update(password).digest("hex")
 
   try {
+    // 1. Verificar administradores
     const adminRow = await executeQuerySingle(
       `SELECT IdAdmin AS id_admin, Usuario AS usuario, NombreCompleto AS nombre,
               Clave AS clave, Activo AS activo
        FROM eval.UsuarioAdmin WHERE Usuario = ? AND Activo = 1`,
-      [usuario.trim().toLowerCase()]
+      [usuario.toLowerCase()]
     )
 
     if (adminRow) {
-      if (hashInputSHA256 !== adminRow.clave) {
+      console.log("Admin encontrado, verificando contraseña...")
+      if (hashInputSHA256 === adminRow.clave || comparePassword(password, adminRow.clave)) {
+        console.log("✅ Admin login exitoso:", adminRow.usuario)
+        const token = jwt.sign(
+          { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre },
+          JWT_SECRET,
+          { expiresIn: "8h" }
+        )
+        return res.json({
+          tipo_usuario: "admin",
+          num_control: null,
+          nombre_completo: adminRow.nombre,
+          token
+        })
+      } else {
+        console.log("Contraseña de admin incorrecta")
         return res.status(401).json({ error: "Credenciales inválidas" })
       }
-      const token = jwt.sign(
-        { tipo: "admin", id: adminRow.id_admin, nombre: adminRow.nombre },
-        JWT_SECRET,
-        { expiresIn: "8h" }
-      )
-      return res.json({
-        tipo_usuario: "admin",
-        num_control: null,
-        nombre_completo: adminRow.nombre,
-        token
-      })
     }
 
-    const numControl = Number(usuario.trim())
-    if (!numControl) {
+    // 2. Verificar alumnos
+    const numControl = Number(usuario)
+    if (isNaN(numControl)) {
+      console.log("Login fallido: Usuario no es número válido")
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
     const alumno = await executeQuerySingle(
-      `SELECT NumControl, NombreCompleto, Clave FROM dbo.Alumno WHERE NumControl = ?`,
+      `SELECT NumControl, NombreCompleto, Clave FROM dbo.Alumno WHERE NumControl = ? AND Situacion = 1`,
       [numControl]
     )
 
     if (!alumno) {
+      console.log("Login fallido: Alumno no encontrado:", numControl)
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
 
-    const hashInputSHA1 = crypto.createHash("sha1").update(password).digest("hex")
-    const claveHex = alumno.Clave ? alumno.Clave.toString("hex") : ""
-
-    if (hashInputSHA1 !== claveHex) {
+    console.log("Alumno encontrado:", alumno.NumControl, alumno.NombreCompleto)
+    console.log("Hash almacenado (primeros 10 chars):", alumno.Clave?.substring(0, 10))
+    
+    // Comparar usando múltiples formatos de hash
+    const passwordMatches = comparePassword(password, alumno.Clave)
+    
+    if (!passwordMatches) {
+      console.log("Contraseña incorrecta para alumno:", numControl)
+      // Log para debugging
+      const testSHA1 = generateHashSHA1(password.toUpperCase())
+      const testSHA1Lower = generateHashSHA1(password.toLowerCase())
+      console.log(`Hash SHA1 (upper): ${testSHA1}`)
+      console.log(`Hash SHA1 (lower): ${testSHA1Lower}`)
+      console.log(`Hash almacenado: ${alumno.Clave}`)
       return res.status(401).json({ error: "Credenciales inválidas" })
     }
+
+    console.log("✅ Alumno login exitoso:", numControl)
 
     const periodo = await executeQuerySingle(
       `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`
@@ -298,11 +382,32 @@ app.post("/api/auth/login", async (req, res) => {
       token
     })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/auth/login:", err)
-    }
+    console.error("Error en /api/auth/login:", err)
     return res.status(500).json({ error: "Error interno del servidor" })
   }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   Endpoint de prueba para verificar hashes
+══════════════════════════════════════════════════════════════ */
+app.post("/api/test-hash", async (req, res) => {
+  const { password, storedHash } = req.body
+  
+  if (!password) {
+    return res.status(400).json({ error: "Se requiere password" })
+  }
+  
+  const results = {
+    password: password,
+    sha1_upper: generateHashSHA1(password.toUpperCase()),
+    sha1_lower: generateHashSHA1(password.toLowerCase()),
+    sha1_original: generateHashSHA1(password),
+    sha256: generateHashSHA256(password),
+    md5: generateHashMD5(password),
+    matches_stored: storedHash ? comparePassword(password, storedHash) : null
+  }
+  
+  res.json(results)
 })
 
 /* ══════════════════════════════════════════════════════════════
@@ -330,9 +435,7 @@ app.get("/api/admin/configuracion", authMiddleware, soloAdmin, async (req, res) 
 
     res.json({ periodoActivo, encuesta, periodos })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/admin/configuracion:", err)
-    }
+    console.error("Error en /api/admin/configuracion:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -356,9 +459,7 @@ app.post("/api/admin/activar-periodo", authMiddleware, soloAdmin, async (req, re
 
     res.json({ success: true, mensaje: `Periodo ${idPeriodo} activado correctamente` })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/admin/activar-periodo:", err)
-    }
+    console.error("Error en /api/admin/activar-periodo:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -401,9 +502,7 @@ app.post("/api/admin/configurar-evaluacion", authMiddleware, soloAdmin, async (r
 
     res.json({ success: true, mensaje: "Configuración guardada correctamente" })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error:", err)
-    }
+    console.error("Error:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -529,9 +628,7 @@ app.get("/api/alumno/perfil", authMiddleware, async (req, res) => {
 
     res.json(response)
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/alumno/perfil:", err)
-    }
+    console.error("Error en /api/alumno/perfil:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -565,9 +662,7 @@ app.get("/api/alumno/evaluaciones", authMiddleware, async (req, res) => {
 
     res.json({ evaluaciones })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/alumno/evaluaciones:", err)
-    }
+    console.error("Error en /api/alumno/evaluaciones:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -592,9 +687,7 @@ app.get("/api/encuesta/preguntas", authMiddleware, async (req, res) => {
 
     return res.json({ idEncuesta: encuesta.IdEncuesta, preguntas, totalPreguntas: preguntas.length })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/encuesta/preguntas:", err)
-    }
+    console.error("Error en /api/encuesta/preguntas:", err)
     return res.status(500).json({ error: "Error interno" })
   }
 })
@@ -676,9 +769,7 @@ app.post("/api/evaluacion/iniciar", authMiddleware, async (req, res) => {
     const idEvaluacion = insertResult[0]?.IdEvaluacion
     return res.json({ idEvaluacion, idEncuesta: encuesta.IdEncuesta, mensaje: "Evaluación iniciada correctamente" })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/evaluacion/iniciar:", err)
-    }
+    console.error("Error en /api/evaluacion/iniciar:", err)
     return res.status(500).json({ error: "Error interno" })
   }
 })
@@ -735,9 +826,7 @@ app.post("/api/evaluacion/responder", authMiddleware, async (req, res) => {
 
     return res.json({ success: true, mensaje: "Respuestas guardadas correctamente" })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/evaluacion/responder:", err)
-    }
+    console.error("Error en /api/evaluacion/responder:", err)
     return res.status(500).json({ error: "Error interno" })
   }
 })
@@ -778,9 +867,7 @@ app.post("/api/evaluacion/comentario", authMiddleware, async (req, res) => {
 
     return res.json({ success: true, mensaje: "Comentario guardado correctamente" })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en POST /api/evaluacion/comentario:", err)
-    }
+    console.error("Error en POST /api/evaluacion/comentario:", err)
     return res.status(500).json({ error: "Error interno" })
   }
 })
@@ -801,6 +888,7 @@ app.get("/api/dashboard/docentes", authMiddleware, soloAdmin, async (req, res) =
     )
     res.json({ docentes: rows })
   } catch (err) {
+    console.error("Error en /api/dashboard/docentes:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -819,6 +907,7 @@ app.get("/api/dashboard/periodos", authMiddleware, soloAdmin, async (req, res) =
     )
     res.json({ periodos: rows })
   } catch (err) {
+    console.error("Error en /api/dashboard/periodos:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -832,6 +921,7 @@ app.get("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req, 
     if (!periodo) return res.json({ existe: false, mensaje: "No hay periodo activo" })
     res.json({ existe: true, periodo })
   } catch (err) {
+    console.error("Error en /api/dashboard/periodo-activo:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -859,6 +949,7 @@ app.post("/api/dashboard/periodo-activo", authMiddleware, soloAdmin, async (req,
     )
     res.json({ success: true, mensaje: `Periodo ${nuevo.Nombre} activado`, periodo: nuevo })
   } catch (err) {
+    console.error("Error en /api/dashboard/periodo-activo POST:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -877,6 +968,7 @@ app.get(
       )
       res.json({ grupos: rows })
     } catch (err) {
+      console.error("Error en grupos:", err)
       res.status(500).json({ error: "Error interno" })
     }
   }
@@ -918,6 +1010,7 @@ app.get("/api/dashboard/docente/:idDocente/alumnos", authMiddleware, soloAdmin, 
     )
     res.json({ alumnos })
   } catch (err) {
+    console.error("Error en alumnos de docente:", err)
     res.status(500).json({ error: "Error interno: " + err.message })
   }
 })
@@ -1055,9 +1148,7 @@ app.get("/api/dashboard/departamentos", authMiddleware, soloAdmin, async (req, r
     resultado.sort((a, b) => b.promedioGeneral - a.promedioGeneral)
     res.json({ departamentos: resultado })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/dashboard/departamentos:", err)
-    }
+    console.error("Error en /api/dashboard/departamentos:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -1158,9 +1249,7 @@ app.get("/api/dashboard/resultados", authMiddleware, soloAdmin, async (req, res)
         : "SIN DATOS"
     })
   } catch (err) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error en /api/dashboard/resultados:", err)
-    }
+    console.error("Error en /api/dashboard/resultados:", err)
     res.status(500).json({ error: "Error interno" })
   }
 })
@@ -1191,31 +1280,11 @@ app.get(
       )
       res.json({ idDocente: docenteId, idPeriodo: periodoId, total: comentarios.length, comentarios })
     } catch (err) {
+      console.error("Error en comentarios:", err)
       res.status(500).json({ error: "Error interno: " + err.message })
     }
   }
 )
-
-/* ══════════════════════════════════════════════════════════════
-   ARRANQUE — Solo en desarrollo local (NO en Vercel)
-══════════════════════════════════════════════════════════════ */
-if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, "0.0.0.0", async () => {
-    console.log("=======================================")
-    console.log("SICOT API CORRIENDO (LOCAL)")
-    console.log("=======================================")
-    console.log(`Puerto: ${PORT}`)
-    console.log(`Entorno: ${process.env.NODE_ENV || "development"}`)
-    console.log(`Base de datos: ${dbConfig.server}/${dbConfig.database}`)
-    console.log("=======================================")
-    try {
-      await getConnection()
-      console.log("Conexión a Azure SQL establecida")
-    } catch (err) {
-      console.error("No se pudo conectar a Azure SQL:", err.message)
-    }
-  })
-}
 
 /* ══════════════════════════════════════════════════════════════
    EXPORTAR — Requerido por Vercel (@vercel/node)

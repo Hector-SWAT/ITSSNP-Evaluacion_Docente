@@ -167,8 +167,9 @@ function comparePassword(password, storedHash) {
     generateHashSHA1(passwordUpper),
     generateHashSHA1(passwordLower),
     generateHashSHA1(password),
-    generateHashSHA256(password),
+    generateHashSHA256(password),  
     generateHashMD5(password),
+    crypto.createHash("sha256").update(passwordUpper).digest("hex").toUpperCase(), // SHA256 con MAYÚSCULAS
     // Hash directos sin conversión
     passwordUpper,
     passwordLower,

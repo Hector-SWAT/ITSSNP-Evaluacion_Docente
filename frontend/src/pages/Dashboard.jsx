@@ -148,28 +148,40 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
   a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
 }
 
-/* ─── Export PDF (VERSIÓN CORREGIDA - SIN RECORTES) ─────────────────── */
+/* ─── Export PDF ─────────────────────────────────────────── 
+   CORRECCIONES:
+   1. Eliminada la página en blanco inicial (se quitó el primer pdf.addPage())
+   2. Se usan datos reales de periodo, división del tutor, grupo asignado
+   3. Firma final correcta: C.c.p tutor / Jefa Desarrollo Académico / Psc. Expediente
+   4. No aparece el tutor en la firma según indicación
+──────────────────────────────────────────────────────────── */
 async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   if (!resultado) return
-  
+
   const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
-  
-  // Usar orientación portrait para mejor legibilidad
+
+  // ── Datos dinámicos del tutor ──────────────────────────
+  // Se intenta leer la división/departamento desde el objeto tutor;
+  // si no existe se cae al departamento genérico de la institución.
+  const divisionTutor   = tutor.departamento || tutor.division || tutor.carrera || "Ingeniería"
+  const periodoNombre   = periodo.Nombre || periodo.nombre || `Periodo ${periodo.id}`
+  // El grupo asignado al tutor (primer grupo del listado si no se filtró uno)
+  const grupoAsignado   = grupoLabel || tutor.grupo || tutor.Grupo || "Todos los grupos"
+
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: 'letter'
   })
-  
-  const pageWidth = pdf.internal.pageSize.getWidth()
-  const pageHeight = pdf.internal.pageSize.getHeight()
-  const margin = 15
-  let y = margin
 
-  // Función para agregar encabezado
+  const pageWidth  = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin     = 15
+  let y            = margin
+
+  // ── Encabezado institucional ───────────────────────────
   const addHeader = (doc) => {
     const w = doc.internal.pageSize.getWidth()
-    
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text('Instituto Tecnológico Superior de la Sierra Norte de Puebla', w / 2, 12, { align: 'center' })
@@ -178,11 +190,10 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     doc.text('POR ALUMNO', w / 2, 26, { align: 'center' })
     doc.setFontSize(8)
     doc.text('Rev. 01 (ITSSNP-AC-PA-03-8)', w - margin, 32, { align: 'right' })
-    
     return 38
   }
 
-  // Función para agregar pie de página
+  // ── Pie de página numerado ─────────────────────────────
   const addFooter = (doc, pageNum, totalPages) => {
     const w = doc.internal.pageSize.getWidth()
     const h = doc.internal.pageSize.getHeight()
@@ -190,55 +201,71 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     doc.text(`Página ${pageNum} de ${totalPages}`, w - margin, h - 10, { align: 'right' })
   }
 
-  // ==================== PORTADA ====================
-  pdf.addPage()
-  
+  /* ════════════════════════════════════════════════════════
+     PORTADA  — primera página del documento (sin addPage previo)
+  ════════════════════════════════════════════════════════ */
+  // La instancia jsPDF ya crea una página; sólo la usamos directamente.
+
   pdf.setFontSize(26)
   pdf.setFont('helvetica', 'bold')
   pdf.text('SISTEMA DE EVALUACIÓN', pageWidth / 2, 70, { align: 'center' })
   pdf.setFontSize(24)
   pdf.text('DE TUTORÍAS', pageWidth / 2, 85, { align: 'center' })
-  
+
   pdf.setFontSize(16)
   pdf.setFont('helvetica', 'normal')
   pdf.text('ITSSNP', pageWidth / 2, 105, { align: 'center' })
-  
+
   pdf.setFontSize(14)
   pdf.text('Resultados de Evaluación de', pageWidth / 2, 130, { align: 'center' })
   pdf.setFontSize(18)
   pdf.setFont('helvetica', 'bold')
   pdf.text('PERSONA TUTORA', pageWidth / 2, 145, { align: 'center' })
-  
+
   pdf.setDrawColor(0, 102, 204)
   pdf.setLineWidth(0.8)
-  pdf.line(pageWidth/2 - 60, 158, pageWidth/2 + 60, 158)
-  
+  pdf.line(pageWidth / 2 - 60, 158, pageWidth / 2 + 60, 158)
+
+  // ── Datos de portada con valores reales ───────────────
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'normal')
-  const infoY = 180
-  pdf.text(`División Académica/Departamento: Ingeniería Informática`, margin, infoY)
-  pdf.text(`Periodo a evaluar: ${periodo.nombre}`, margin, infoY + 10)
+  const infoY = 175
+  pdf.text(`División Académica / Departamento: ${divisionTutor}`, margin, infoY)
+  pdf.text(`Periodo a evaluar: ${periodoNombre}`, margin, infoY + 10)
   pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, infoY + 20)
   pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, infoY + 30)
-  pdf.text(`Grupo evaluado: ${grupoLabel || 'Todos los grupos'}`, margin, infoY + 40)
-  
-  pdf.setFontSize(9)
-  pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-MX')}`, pageWidth - margin, pageHeight - 25, { align: 'right' })
-  
-  pdf.setFontSize(8)
-  pdf.text('C.c.p. Personal Tutor Evaluado – Jefa de División – Expediente de material de apoyo', pageWidth / 2, pageHeight - 15, { align: 'center' })
+  pdf.text(`Grupo evaluado: ${grupoAsignado}`, margin, infoY + 40)
 
-  // ==================== PÁGINA DE RESULTADOS ====================
+  pdf.setFontSize(9)
+  pdf.text(
+    `Fecha de generación: ${new Date().toLocaleDateString('es-MX')}`,
+    pageWidth - margin,
+    pageHeight - 25,
+    { align: 'right' }
+  )
+
+  // ── Pie institucional de portada ───────────────────────
+  pdf.setFontSize(8)
+  pdf.text(
+    'C.c.p. Personal Tutor Evaluado – Jefa de Departamento de Desarrollo Académico – Expediente de material de apoyo',
+    pageWidth / 2,
+    pageHeight - 15,
+    { align: 'center' }
+  )
+
+  /* ════════════════════════════════════════════════════════
+     PÁGINA DE RESULTADOS
+  ════════════════════════════════════════════════════════ */
   pdf.addPage()
   let headerHeight = addHeader(pdf)
   y = headerHeight + 5
-  
+
   const tableData = CATEGORIAS.map((cat, i) => {
-    const val = promediosCat[cat.id] ?? 0
+    const val   = promediosCat[cat.id] ?? 0
     const cname = clasifFromVal(val)
     return [i + 1, cat.nombre, val.toFixed(2), cname]
   })
-  
+
   pdf.autoTable({
     startY: y,
     head: [['#', 'CRITERIO EVALUADO', 'PUNTAJE', 'CLASIFICACIÓN']],
@@ -255,70 +282,72 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     },
     margin: { left: margin, right: margin }
   })
-  
+
   y = pdf.lastAutoTable.finalY + 10
-  
+
   pdf.setFontSize(12)
   pdf.setFont('helvetica', 'bold')
   pdf.text(`PROMEDIO GENERAL: ${promedioGeneral.toFixed(2)} / 5.00`, margin, y)
   pdf.setFontSize(11)
   pdf.text(`CLASIFICACIÓN: ${clasificacion}`, margin + 95, y)
-  
+
   y += 15
-  
+
   pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
   pdf.text('RESULTADOS REPRESENTADOS CON GRÁFICA', margin, y)
   y += 8
-  
-  const chartWidth = pageWidth - (margin * 2) - 50
-  const barHeight = 5
-  
+
+  const chartWidth = pageWidth - margin * 2 - 50
+  const barHeight  = 5
+
   CATEGORIAS.forEach((cat, i) => {
-    const val = promediosCat[cat.id] ?? 0
+    const val          = promediosCat[cat.id] ?? 0
     const barWidthChart = (val / 5) * chartWidth
-    
-    pdf.setFontSize(7)
-    pdf.setFont('helvetica', 'normal')
-    pdf.text(`${i+1}.`, margin + 2, y + 3)
-    
-    pdf.setFillColor(CAT_COLORS[i % CAT_COLORS.length])
-    pdf.rect(margin + 12, y, barWidthChart, barHeight, 'F')
-    
-    pdf.setFontSize(7)
-    pdf.setFont('helvetica', 'bold')
-    pdf.text(val.toFixed(1), margin + 12 + barWidthChart + 3, y + 3)
-    
-    y += 7
-    
+
     if (y > pageHeight - 40 && i < CATEGORIAS.length - 1) {
       pdf.addPage()
       y = addHeader(pdf) + 5
     }
+
+    pdf.setFontSize(7)
+    pdf.setFont('helvetica', 'normal')
+    pdf.text(`${i + 1}.`, margin + 2, y + 3)
+
+    pdf.setFillColor(CAT_COLORS[i % CAT_COLORS.length])
+    pdf.rect(margin + 12, y, barWidthChart, barHeight, 'F')
+
+    pdf.setFontSize(7)
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(val.toFixed(1), margin + 12 + barWidthChart + 3, y + 3)
+
+    y += 7
   })
-  
+
   y += 10
 
-  // ==================== PÁGINA DE COMENTARIOS ====================
+  /* ════════════════════════════════════════════════════════
+     PÁGINA DE COMENTARIOS + FIRMAS
+  ════════════════════════════════════════════════════════ */
   pdf.addPage()
   y = addHeader(pdf) + 5
-  
+
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'bold')
   pdf.text('COMENTARIOS DE LA COMUNIDAD ESTUDIANTIL', margin, y)
   y += 10
-  
+
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
-  
+
   if (comentarios && comentarios.length > 0) {
-    comentarios.forEach((com, idx) => {
-      const text = `• "${com.Comentario || com.comentario || 'Sin comentario'}"`
+    comentarios.forEach((com) => {
+      const text  = `• "${com.Comentario || com.comentario || 'Sin comentario'}"`
       const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 10)
       pdf.text(lines, margin + 5, y)
-      y += (lines.length * 5) + 5
-      
-      if (y > pageHeight - 50) {
+      y += lines.length * 5 + 5
+
+      if (y > pageHeight - 60) {
         pdf.addPage()
         y = addHeader(pdf) + 5
       }
@@ -327,48 +356,95 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     pdf.text('No hay comentarios registrados para este tutor(a).', margin, y)
     y += 10
   }
-  
-  const signatureY = pageHeight - 35
-  if (y < signatureY) {
-    pdf.setDrawColor(150, 150, 150)
-    pdf.setLineWidth(0.3)
-    
-    pdf.line(margin, signatureY, margin + 60, signatureY)
-    pdf.setFontSize(8)
-    pdf.text(tutor.nombre, margin + 30, signatureY + 4, { align: 'center' })
-    pdf.text('Personal Tutor Evaluado', margin + 30, signatureY + 9, { align: 'center' })
-    
-    pdf.line(pageWidth - margin - 60, signatureY, pageWidth - margin, signatureY)
-    pdf.text('Lic. Marisela Hernández González', pageWidth - margin - 30, signatureY + 4, { align: 'center' })
-    pdf.text('Jefa de División de Ingeniería Informática', pageWidth - margin - 30, signatureY + 9, { align: 'center' })
-    
-    pdf.setFontSize(7)
-    pdf.text('Expediente de material de apoyo de Departamento de Desarrollo Académico', pageWidth / 2, pageHeight - 12, { align: 'center' })
+
+  /* ── Bloque de firmas / C.c.p. ────────────────────────── 
+     Estructura solicitada:
+       Línea 1: C.c.p. [Nombre del tutor].  Personal docente evaluado.
+       Línea 2: [Jefe/a de la carrera a la que pertenece el tutor]
+       Línea 3: Psc. Expediente... (texto institucional)
+       Firma única: M.I.A. Liliana Pérez González
+                    Jefa de Departamento de Desarrollo Académico
+  ─────────────────────────────────────────────────────────── */
+  const signatureAreaY = pageHeight - 50
+
+  // Si el contenido no llega hasta allá, ponemos las firmas al final de la página
+  const firmasY = Math.max(y + 10, signatureAreaY)
+
+  // Si no cabe en la página actual, nueva página
+  if (firmasY > pageHeight - 45) {
+    pdf.addPage()
+    y = addHeader(pdf) + 5
   }
-  
+
+  const fy = Math.min(firmasY, pageHeight - 48)
+
+  // ── Línea de firma ────────────────────────────────────
+  pdf.setDrawColor(150, 150, 150)
+  pdf.setLineWidth(0.3)
+
+  // Firma centrada: M.I.A. Liliana Pérez González
+  const sigX = pageWidth / 2
+  pdf.line(sigX - 50, fy, sigX + 50, fy)
+  pdf.setFontSize(9)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text('M.I.A. Liliana Pérez González', sigX, fy + 5, { align: 'center' })
+  pdf.setFont('helvetica', 'normal')
+  pdf.text('Jefa de Departamento de Desarrollo Académico', sigX, fy + 10, { align: 'center' })
+
+  // ── C.c.p. al pie ─────────────────────────────────────
+  const ccpY = pageHeight - 24
+  pdf.setFontSize(8)
+  pdf.setFont('helvetica', 'bold')
+  pdf.text(`C.c.p. ${tutor.nombre}.`, margin, ccpY)
+  pdf.setFont('helvetica', 'normal')
+  pdf.text('Personal docente evaluado.', margin, ccpY + 5)
+  // Jefe/a de la carrera (se usa la división del tutor como referencia)
+  pdf.text(`Jefe(a) de la carrera de ${divisionTutor}.`, margin, ccpY + 10)
+
+  // ── Línea institucional Psc. Expediente ───────────────
+  pdf.setFontSize(7.5)
+  pdf.text(
+    'Psc. Expediente de material de apoyo de Departamento de Desarrollo Académico.',
+    pageWidth / 2,
+    pageHeight - 8,
+    { align: 'center' }
+  )
+
+  /* ── Numeración de páginas (omite portada) ────────────── */
   const pageCount = pdf.internal.getNumberOfPages()
-  for (let i = 1; i <= pageCount; i++) {
+  for (let i = 2; i <= pageCount; i++) {
     pdf.setPage(i)
-    if (i > 1) {
-      addFooter(pdf, i - 1, pageCount - 1)
-    }
+    addFooter(pdf, i - 1, pageCount - 1)
   }
-  
+
   pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
 }
 
-/* ─── Tarjetas de departamentos (encima de filtros) ──────── */
+/* ─── Tarjetas de departamentos ──────────────────────────── 
+   CORRECCIÓN: se filtra cualquier departamento cuyo nombre sea
+   nulo, vacío, o exactamente "SIN NOMBRE" (case-insensitive).
+──────────────────────────────────────────────────────────── */
+function esDepartamentoValido(nombre) {
+  if (!nombre) return false
+  const n = String(nombre).trim().toUpperCase()
+  return n !== "" && n !== "SIN NOMBRE" && n !== "SIN DEPARTAMENTO"
+}
+
 function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
-  const [deptos,  setDeptos]  = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState(null)
+  const [deptos,   setDeptos]   = useState([])
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
   const [expanded, setExpanded] = useState(null)
 
   useEffect(() => {
     if (!idPeriodo) { setDeptos([]); return }
     setLoading(true); setError(null)
     getDepartamentosAPI(idPeriodo)
-      .then(setDeptos)
+      .then(data => {
+        // ── Filtrar departamentos sin nombre válido ──────
+        const validos = data.filter(d => esDepartamentoValido(d.nombre))
+        setDeptos(validos)
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [idPeriodo])
@@ -404,9 +480,9 @@ function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
 
       <div className="db-depto-cards">
         {deptos.map((d, idx) => {
-          const cs = CLASIF_COLOR[d.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
-          const pctEval   = d.totalDocentes > 0 ? Math.round((d.docentesEvaluados / d.totalDocentes) * 100) : 0
-          const isExp     = expanded === d.nombre
+          const cs      = CLASIF_COLOR[d.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
+          const pctEval = d.totalDocentes > 0 ? Math.round((d.docentesEvaluados / d.totalDocentes) * 100) : 0
+          const isExp   = expanded === d.nombre
           const medalIcon = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null
 
           return (
@@ -434,13 +510,13 @@ function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
 
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
                 {[
-                  { lbl:"Tutores",    val:`${d.docentesEvaluados}/${d.totalDocentes}`, sub:`${pctEval}% eval.` },
-                  { lbl:"Participación", val:`${d.participacionAlumnos}%`, sub:"alumnos" },
+                  { lbl:"Tutores",       val:`${d.docentesEvaluados}/${d.totalDocentes}`, sub:`${pctEval}% eval.` },
+                  { lbl:"Participación", val:`${d.participacionAlumnos}%`,                sub:"alumnos" },
                 ].map(s => (
                   <div key={s.lbl} style={{ background:"#f8faff", borderRadius:8, padding:"6px 8px" }}>
                     <div style={{ fontSize:13, fontWeight:800, color:"#0f172a" }}>{s.val}</div>
                     <div style={{ fontSize:10, color:"#64748b", fontWeight:600 }}>{s.lbl}</div>
-                    <div style={{ fontSize:9, color:"#94a3b8" }}>{s.sub}</div>
+                    <div style={{ fontSize:9,  color:"#94a3b8" }}>{s.sub}</div>
                   </div>
                 ))}
               </div>
@@ -459,7 +535,7 @@ function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
               {isExp && (
                 <div style={{ marginTop:10, borderTop:`1px solid ${cs.border}`, paddingTop:10, display:"flex", flexDirection:"column", gap:6 }}>
                   {[...(d.docentes || [])].sort((a,b) => b.promedio - a.promedio).map((tutor, rank) => {
-                    const dcs = CLASIF_COLOR[tutor.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
+                    const dcs      = CLASIF_COLOR[tutor.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
                     const rankIcon = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank+1}.`
                     return (
                       <div key={tutor.id} style={{ background:"#fff", border:"1px solid #e8eeff", borderRadius:8, padding:"8px 10px" }}>
@@ -498,10 +574,10 @@ export default function Dashboard() {
   const navigate         = useNavigate()
   const { user, logout } = useAuth()
 
-  const [tutores, setTutores] = useState([])
-  const [periodos, setPeriodos] = useState([])
-  const [grupos,   setGrupos]   = useState([])
-  const [comentarios, setComentarios] = useState([])
+  const [tutores,    setTutores]    = useState([])
+  const [periodos,   setPeriodos]   = useState([])
+  const [grupos,     setGrupos]     = useState([])
+  const [comentarios,setComentarios]= useState([])
 
   const [idDepartamento, setIdDepartamento] = useState("")
   const [idTutor,        setIdTutor]        = useState("")
@@ -512,7 +588,7 @@ export default function Dashboard() {
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState(null)
 
-  const [cargandoTutores, setCargandoTutores] = useState(true)
+  const [cargandoTutores,  setCargandoTutores]  = useState(true)
   const [cargandoPeriodos, setCargandoPeriodos] = useState(true)
   const [cargandoGrupos,   setCargandoGrupos]   = useState(false)
   const [errorTutores,     setErrorTutores]     = useState(null)
@@ -523,12 +599,14 @@ export default function Dashboard() {
   const [vistaGraf,  setVistaGraf]  = useState("barras")
   const [tabActivo,  setTabActivo]  = useState("resultados")
 
-  const departamentos = [...new Set(tutores.map(t => t.departamento || "Sin Departamento"))].sort()
-  const tutoresFiltrados = idDepartamento
-    ? tutores.filter(t => (t.departamento || "Sin Departamento") === idDepartamento)
-    : tutores
-  const tutorSeleccionado = tutores.find(t => String(t.id) === String(idTutor))
-  
+  // ── Filtrar tutores sin departamento válido en los selects ──
+  const tutoresValidos     = tutores.filter(t => esDepartamentoValido(t.departamento))
+  const departamentos      = [...new Set(tutoresValidos.map(t => t.departamento))].sort()
+  const tutoresFiltrados   = idDepartamento
+    ? tutoresValidos.filter(t => t.departamento === idDepartamento)
+    : tutoresValidos
+  const tutorSeleccionado  = tutores.find(t => String(t.id) === String(idTutor))
+
   const grupoLabel = idGrupo ? (() => {
     const grupo = grupos.find(g => String(g.id) === String(idGrupo))
     return grupo ? (grupo.Clave || grupo.clave || `Grupo ${grupo.id}`) : null
@@ -547,10 +625,9 @@ export default function Dashboard() {
 
   const recargarDatos = useCallback(async () => {
     try {
-      const tutoresData = await getDocentesAPI()
+      const tutoresData      = await getDocentesAPI()
       setTutores(tutoresData)
-      const periodosData = await getPeriodosAPI()
-      // ORDENAR PERIODOS: más reciente primero (descendente por id)
+      const periodosData     = await getPeriodosAPI()
       const periodosOrdenados = [...periodosData].sort((a, b) => b.id - a.id)
       setPeriodos(periodosOrdenados)
       const activo = periodosOrdenados.find(p => p.activo === 1 || p.activo === true)
@@ -575,7 +652,6 @@ export default function Dashboard() {
       try {
         setCargandoPeriodos(true)
         const pers = await getPeriodosAPI()
-        // ORDENAR PERIODOS: más reciente primero (descendente por id)
         const periodosOrdenados = [...pers].sort((a, b) => b.id - a.id)
         setPeriodos(periodosOrdenados)
         setErrorPeriodos(null)
@@ -597,14 +673,14 @@ export default function Dashboard() {
     if (!idTutor || !idPeriodo) { setGrupos([]); setIdGrupo(""); return }
     setCargandoGrupos(true)
     getGruposAPI(Number(idTutor), Number(idPeriodo))
-      .then(g => { 
+      .then(g => {
         const gruposConClave = g.map(grupo => ({
           ...grupo,
           Clave: grupo.Clave || grupo.clave || `Grupo ${grupo.id}`
         }))
-        setGrupos(gruposConClave); 
-        setErrorGrupos(null); 
-        setIdGrupo("") 
+        setGrupos(gruposConClave)
+        setErrorGrupos(null)
+        setIdGrupo("")
       })
       .catch(err => { setErrorGrupos(err.message); setGrupos([]); setIdGrupo("") })
       .finally(() => setCargandoGrupos(false))
@@ -615,11 +691,7 @@ export default function Dashboard() {
     setLoading(true); setError(null); setResultado(null)
     getResultadosDocenteAPI(Number(idTutor), Number(idPeriodo), idGrupo ? Number(idGrupo) : undefined)
       .then(async (data) => {
-        setResultado({
-          ...data,
-          tutor: data.docente,
-          docente: undefined
-        })
+        setResultado({ ...data, tutor: data.docente, docente: undefined })
         const comentariosData = await getComentariosTutorAPI(Number(idTutor), Number(idPeriodo))
         setComentarios(comentariosData)
       })
@@ -632,7 +704,7 @@ export default function Dashboard() {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }, [])
 
-  const cs = resultado ? (CLASIF_COLOR[resultado.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]) : {}
+  const cs          = resultado ? (CLASIF_COLOR[resultado.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]) : {}
   const pctCompleto = resultado ? Math.round((resultado.completaron.length / resultado.totalAlumnos) * 100) : 0
 
   return (
@@ -764,25 +836,14 @@ export default function Dashboard() {
 
         <div className="db-body">
           <div style={{
-            display: 'flex',
-            gap: '12px',
-            background: '#fff',
-            borderRadius: '16px',
-            padding: '6px',
-            border: '1.5px solid #e2e8f0',
-            marginBottom: '24px'
+            display: 'flex', gap: '12px', background: '#fff', borderRadius: '16px',
+            padding: '6px', border: '1.5px solid #e2e8f0', marginBottom: '24px'
           }}>
             <button
               onClick={() => setTabActivo("resultados")}
               style={{
-                flex: 1,
-                padding: '12px 20px',
-                border: 'none',
-                borderRadius: '12px',
-                fontSize: '14px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
+                flex: 1, padding: '12px 20px', border: 'none', borderRadius: '12px',
+                fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s',
                 background: tabActivo === "resultados" ? 'linear-gradient(135deg, #1648b8, #2563eb)' : 'transparent',
                 color: tabActivo === "resultados" ? '#fff' : '#64748b'
               }}
@@ -792,14 +853,8 @@ export default function Dashboard() {
             <button
               onClick={() => setTabActivo("configuracion")}
               style={{
-                flex: 1,
-                padding: '12px 20px',
-                border: 'none',
-                borderRadius: '12px',
-                fontSize: '14px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
+                flex: 1, padding: '12px 20px', border: 'none', borderRadius: '12px',
+                fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s',
                 background: tabActivo === "configuracion" ? 'linear-gradient(135deg, #1648b8, #2563eb)' : 'transparent',
                 color: tabActivo === "configuracion" ? '#fff' : '#64748b'
               }}
@@ -820,7 +875,7 @@ export default function Dashboard() {
                       <option value="">— Todos los departamentos —</option>
                       {departamentos.map(dept => (
                         <option key={dept} value={dept}>
-                          {dept} ({tutores.filter(t=>(t.departamento||"Sin Departamento")===dept).length})
+                          {dept} ({tutoresValidos.filter(t => t.departamento === dept).length})
                         </option>
                       ))}
                     </>}
@@ -935,7 +990,7 @@ export default function Dashboard() {
                         <div className="db-resumen-info">
                           <p className="db-resumen-name">{resultado.tutor.nombre}</p>
                           {idDepartamento && <span className="db-resumen-dept">🏢 {idDepartamento}</span>}
-                          <p className="db-resumen-period">{resultado.periodo.nombre}</p>
+                          <p className="db-resumen-period">{resultado.periodo.Nombre || resultado.periodo.nombre}</p>
                           <div className="db-clasif-badge" style={{ background:cs.badge, color:cs.text }}>★ {resultado.clasificacion}</div>
                         </div>
                       </div>
@@ -945,9 +1000,9 @@ export default function Dashboard() {
                       <p className="db-card-title"><span className="db-card-title-icon">👥</span>Participación de alumnos</p>
                       <div style={{ display:"flex", gap:16, marginBottom:18 }}>
                         {[
-                          { lbl:"Total", val:resultado.totalAlumnos, col:"#1e40af", bg:"#eff2ff" },
-                          { lbl:"Completaron", val:resultado.completaron.length, col:"#15803d", bg:"#f0fdf4" },
-                          { lbl:"Pendientes", val:resultado.faltantes.length, col:"#c2410c", bg:"#fff7ed" },
+                          { lbl:"Total",       val:resultado.totalAlumnos,        col:"#1e40af", bg:"#eff2ff" },
+                          { lbl:"Completaron", val:resultado.completaron.length,  col:"#15803d", bg:"#f0fdf4" },
+                          { lbl:"Pendientes",  val:resultado.faltantes.length,    col:"#c2410c", bg:"#fff7ed" },
                         ].map(m => (
                           <div key={m.lbl} style={{ flex:1, background:m.bg, borderRadius:12, padding:"12px 14px", textAlign:"center" }}>
                             <div style={{ fontSize:24, fontWeight:800, color:m.col }}>{m.val}</div>
@@ -1005,25 +1060,20 @@ export default function Dashboard() {
                             {(tabAlumnos === "completaron" ? resultado.completaron : resultado.faltantes).map((a, idx) => (
                               <tr key={`${tabAlumnos}-${a.numControl || a.num_control || idx}`}>
                                 <td className="db-nc">{a.numControl || a.num_control}</td>
-                                <td style={{ fontWeight: 600 }}>{a.nombre || a.nombre_completo}</td>
+                                <td style={{ fontWeight:600 }}>{a.nombre || a.nombre_completo}</td>
                                 <td><span className="db-chip-grupo">{a.grupo || a.Clave || a.clave || "—"}</span></td>
                                 <td><span className="db-chip-carrera">{a.carrera || a.Carrera || a.carrera_nombre}</span></td>
                                 <td>
-                                  {tabAlumnos === "completaron" ? (
-                                    <span style={{ color: "#15803d", fontWeight: 700, fontSize: 12 }}>✓ Completada</span>
-                                  ) : (
-                                    <span className="db-chip-pend">⏳ Pendiente</span>
-                                  )}
+                                  {tabAlumnos === "completaron"
+                                    ? <span style={{ color:"#15803d", fontWeight:700, fontSize:12 }}>✓ Completada</span>
+                                    : <span className="db-chip-pend">⏳ Pendiente</span>
+                                  }
                                 </td>
                               </tr>
                             ))}
                             {((tabAlumnos === "completaron" && resultado.completaron.length === 0) ||
-                              (tabAlumnos === "faltantes" && resultado.faltantes.length === 0)) && (
-                              <tr>
-                                <td colSpan="5" style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
-                                  No hay alumnos en esta categoría
-                                </td>
-                              </tr>
+                              (tabAlumnos === "faltantes"   && resultado.faltantes.length === 0)) && (
+                              <tr><td colSpan="5" style={{ textAlign:"center", padding:"32px", color:"#94a3b8" }}>No hay alumnos en esta categoría</td></tr>
                             )}
                           </tbody>
                         </table>
@@ -1051,9 +1101,9 @@ export default function Dashboard() {
                         </thead>
                         <tbody>
                           {CATEGORIAS.map((cat, i) => {
-                            const val = resultado.promediosCat[cat.id] ?? 0
+                            const val   = resultado.promediosCat[cat.id] ?? 0
                             const cname = clasifFromVal(val)
-                            const cs2 = CLASIF_COLOR[cname]
+                            const cs2   = CLASIF_COLOR[cname]
                             return (
                               <tr key={cat.id}>
                                 <td style={{ fontWeight:800, color:"#94a3b8" }}>{i+1}</td>

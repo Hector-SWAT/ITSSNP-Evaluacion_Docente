@@ -148,22 +148,24 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
   a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
 }
 /* ─── Export PDF ─────────────────────────────────────────── 
-   INTEGRACIÓN: Logos JPG desde URLs (ITSSNP izquierda, División derecha),
-   PORTADA completa, ENCABEZADO institucional con logos,
-   GRÁFICA DE BARRAS HORIZONTAL del 1er código (colores originales, izq-der),
-   COMENTARIOS, FIRMAS C.c.p., NUMERACIÓN DE PÁGINAS
+   CORRECCIONES:
+   1. Departamento usa el nombre del filtro seleccionado en la web (idDepartamento)
+   2. Logos JPG visibles desde la PORTADA (primera página)
+   3. Gráfica de barras HORIZONTAL con colores originales
 ──────────────────────────────────────────────────────────── */
-async function exportarPDF(resultado, grupoLabel, comentarios = []) {
+async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamentoSeleccionado = "") {
   if (!resultado) return
 
   const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
 
   // ── Datos dinámicos del tutor ──────────────────────────
-  const divisionTutor   = tutor.departamento || tutor.division || tutor.carrera || "Ingeniería"
-  const periodoNombre   = periodo.Nombre || periodo.nombre || `Periodo ${periodo.id}`
-  const grupoAsignado   = grupoLabel || tutor.grupo || tutor.Grupo || "Todos los grupos"
+  // USAR el nombre del departamento seleccionado en el filtro de la web (más completo)
+  // Si no hay filtro, usar los datos del tutor
+  const divisionTutor = idDepartamentoSeleccionado || tutor.departamento || tutor.division || tutor.carrera || "Ingeniería"
+  const periodoNombre = periodo.Nombre || periodo.nombre || `Periodo ${periodo.id}`
+  const grupoAsignado = grupoLabel || tutor.grupo || tutor.Grupo || "Todos los grupos"
 
-  // ── Cargar imágenes JPG desde URLs y convertirlas a base64 ──
+  // ── Cargar imágenes JPG desde URLs ANTES de crear el PDF ──
   const loadImageAsBase64 = async (url) => {
     try {
       const response = await fetch(url)
@@ -180,16 +182,16 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     }
   }
 
-  // URLs de las imágenes JPG
   const LOGO_ITSSNP_URL = 'https://i.postimg.cc/tT5YDgZx/Logo-ITSSNP.jpg'
   const LOGO_DIVISION_URL = 'https://i.postimg.cc/HL8DTdsK/logo-DIVIICION-fotor-enhance-2026043071937-fotor-enhance-2026043072020.jpg'
 
-  // Cargar ambas imágenes en paralelo
+  // Cargar imágenes PRIMERO (esperar a que estén listas)
   const [logoItssnpBase64, logoDivisionBase64] = await Promise.all([
     loadImageAsBase64(LOGO_ITSSNP_URL),
     loadImageAsBase64(LOGO_DIVISION_URL)
   ])
 
+  // AHORA crear el PDF (las imágenes ya están cargadas)
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -250,37 +252,52 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   }
 
   /* ════════════════════════════════════════════════════════
-     PORTADA — Primera página del documento
+     PORTADA — Primera página (CON LOGOS EN ENCABEZADO)
   ════════════════════════════════════════════════════════ */
+  // Añadir encabezado con logos en la portada
+  addHeader(pdf)
+  
+  // Posición Y después del encabezado
+  let y = 45
+
   pdf.setFontSize(26)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('SISTEMA DE EVALUACIÓN', pageWidth / 2, 70, { align: 'center' })
+  pdf.text('SISTEMA DE EVALUACIÓN', pageWidth / 2, y, { align: 'center' })
+  y += 15
   pdf.setFontSize(24)
-  pdf.text('DE TUTORÍAS', pageWidth / 2, 85, { align: 'center' })
+  pdf.text('DE TUTORÍAS', pageWidth / 2, y, { align: 'center' })
+  y += 18
 
   pdf.setFontSize(16)
   pdf.setFont('helvetica', 'normal')
-  pdf.text('ITSSNP', pageWidth / 2, 105, { align: 'center' })
+  pdf.text('ITSSNP', pageWidth / 2, y, { align: 'center' })
+  y += 24
 
   pdf.setFontSize(14)
-  pdf.text('Resultados de Evaluación de', pageWidth / 2, 130, { align: 'center' })
+  pdf.text('Resultados de Evaluación de', pageWidth / 2, y, { align: 'center' })
+  y += 14
   pdf.setFontSize(18)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('PERSONA TUTORA', pageWidth / 2, 145, { align: 'center' })
+  pdf.text('PERSONA TUTORA', pageWidth / 2, y, { align: 'center' })
+  y += 20
 
   pdf.setDrawColor(0, 102, 204)
   pdf.setLineWidth(0.8)
-  pdf.line(pageWidth / 2 - 60, 158, pageWidth / 2 + 60, 158)
+  pdf.line(pageWidth / 2 - 60, y - 5, pageWidth / 2 + 60, y - 5)
+  y += 10
 
-  // ── Datos de portada con valores reales ───────────────
+  // ── Datos de portada con el departamento CORRECTO ─────
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'normal')
-  const infoY = 175
-  pdf.text(`División Académica / Departamento: ${divisionTutor}`, margin, infoY)
-  pdf.text(`Periodo a evaluar: ${periodoNombre}`, margin, infoY + 10)
-  pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, infoY + 20)
-  pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, infoY + 30)
-  pdf.text(`Grupo evaluado: ${grupoAsignado}`, margin, infoY + 40)
+  pdf.text(`División Académica / Departamento: ${divisionTutor}`, margin, y)
+  y += 10
+  pdf.text(`Periodo a evaluar: ${periodoNombre}`, margin, y)
+  y += 10
+  pdf.text(`Tipo de evaluación: Persona Tutora por Alumno`, margin, y)
+  y += 10
+  pdf.text(`Persona Tutora: ${tutor.nombre}`, margin, y)
+  y += 10
+  pdf.text(`Grupo evaluado: ${grupoAsignado}`, margin, y)
 
   pdf.setFontSize(9)
   pdf.text(
@@ -299,11 +316,14 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     { align: 'center' }
   )
 
+  // ── Pie de página en portada ──────────────────────────
+  addFooter(pdf, 1, '?')
+
   /* ════════════════════════════════════════════════════════
      PÁGINA 2 — Tabla de criterios + Gráfica de barras HORIZONTAL
   ════════════════════════════════════════════════════════ */
   pdf.addPage()
-  let y = addHeader(pdf)
+  y = addHeader(pdf)
 
   // Tabla de criterios
   const tableData = CATEGORIAS.map((cat, i) => {
@@ -311,7 +331,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
     const cname = clasifFromVal(val)
     return [cat.nombre, val.toFixed(2), cname]
   })
-  // Agregar fila de PROMEDIO al final
   tableData.push([
     { content: 'PROMEDIO', styles: { halign: 'right', fontStyle: 'bold' } },
     promedioGeneral.toFixed(2),
@@ -340,37 +359,32 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
 
   y = pdf.lastAutoTable.finalY + 8
 
-  /* ── GRÁFICA DE BARRAS HORIZONTAL (ESTILO DEL 1ER CÓDIGO) ── 
-     Usa los mismos colores y disposición izquierda-derecha  */
+  /* ── GRÁFICA DE BARRAS HORIZONTAL ── */
   pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
   pdf.text('RESULTADOS REPRESENTADOS CON GRÁFICA', margin, y)
   y += 8
 
-  const chartWidth = pageWidth - margin * 2 - 40 // ancho para las barras
+  const chartWidth = pageWidth - margin * 2 - 40
   const barHeight  = 5
   const gap        = 2
 
   CATEGORIAS.forEach((cat, i) => {
-    const val    = promediosCat[cat.id] ?? 0
-    const barW   = (val / 5) * chartWidth
+    const val  = promediosCat[cat.id] ?? 0
+    const barW = (val / 5) * chartWidth
 
-    // Control de salto de página
     if (y > pageHeight - 25 && i < CATEGORIAS.length - 1) {
       pdf.addPage()
       y = addHeader(pdf) + 5
     }
 
-    // Número de criterio
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'normal')
     pdf.text(`${i + 1}.`, margin + 2, y + 3)
 
-    // Barra de color (usando CAT_COLORS del código original)
     pdf.setFillColor(CAT_COLORS[i % CAT_COLORS.length])
     pdf.rect(margin + 12, y, barW, barHeight, 'F')
 
-    // Valor numérico
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'bold')
     pdf.text(val.toFixed(1), margin + 12 + barW + 2, y + 3)
@@ -444,9 +458,14 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
 
   /* ── Numeración de páginas ───── */
   const pageCount = pdf.internal.getNumberOfPages()
-  for (let i = 2; i <= pageCount; i++) {
+  for (let i = 1; i <= pageCount; i++) {
     pdf.setPage(i)
-    addFooter(pdf, i - 1, pageCount - 1)
+    if (i === 1) {
+      // Actualizar portada con número total de páginas
+      addFooter(pdf, 1, pageCount)
+    } else {
+      addFooter(pdf, i, pageCount)
+    }
   }
 
   pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
@@ -1112,7 +1131,7 @@ export default function Dashboard() {
                       <div className="db-export-row">
                         <button className="db-exp-btn db-exp-csv" onClick={() => exportarCSV(resultado, grupoLabel)}>📄 Exportar CSV</button>
                         <button className="db-exp-btn db-exp-xls" onClick={() => exportarExcel(resultado, grupoLabel)}>📊 Exportar Excel</button>
-                        <button className="db-exp-btn db-exp-pdf" onClick={() => exportarPDF(resultado, grupoLabel, comentarios)}>📑 Exportar PDF</button>
+                        <button className="db-exp-btn db-exp-pdf" onClick={() => exportarPDF(resultado, grupoLabel, comentarios, idDepartamento)}>📑 Exportar PDF</button>
                       </div>
                     </div>
                   </div>
@@ -1162,3 +1181,4 @@ export default function Dashboard() {
     </>
   )
 }
+ 

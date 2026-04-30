@@ -147,13 +147,11 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
   a.href = URL.createObjectURL(new Blob([xml], { type:"application/vnd.ms-excel;charset=utf-8;" }))
   a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
 }
-
 /* ─── Export PDF ─────────────────────────────────────────── 
-   CORRECCIONES:
-   1. Eliminada la página en blanco inicial (se quitó el primer pdf.addPage())
-   2. Se usan datos reales de periodo, división del tutor, grupo asignado
-   3. Firma final correcta: C.c.p tutor / Jefa Desarrollo Académico / Psc. Expediente
-   4. No aparece el tutor en la firma según indicación
+   INTEGRACIÓN: Logos JPG desde URLs (ITSSNP izquierda, División derecha),
+   PORTADA completa, ENCABEZADO institucional con logos,
+   GRÁFICA DE BARRAS HORIZONTAL del 1er código (colores originales, izq-der),
+   COMENTARIOS, FIRMAS C.c.p., NUMERACIÓN DE PÁGINAS
 ──────────────────────────────────────────────────────────── */
 async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   if (!resultado) return
@@ -161,12 +159,36 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
 
   // ── Datos dinámicos del tutor ──────────────────────────
-  // Se intenta leer la división/departamento desde el objeto tutor;
-  // si no existe se cae al departamento genérico de la institución.
   const divisionTutor   = tutor.departamento || tutor.division || tutor.carrera || "Ingeniería"
   const periodoNombre   = periodo.Nombre || periodo.nombre || `Periodo ${periodo.id}`
-  // El grupo asignado al tutor (primer grupo del listado si no se filtró uno)
   const grupoAsignado   = grupoLabel || tutor.grupo || tutor.Grupo || "Todos los grupos"
+
+  // ── Cargar imágenes JPG desde URLs y convertirlas a base64 ──
+  const loadImageAsBase64 = async (url) => {
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    } catch (error) {
+      console.error('Error cargando imagen:', error)
+      return null
+    }
+  }
+
+  // URLs de las imágenes JPG
+  const LOGO_ITSSNP_URL = 'https://i.postimg.cc/tT5YDgZx/Logo-ITSSNP.jpg'
+  const LOGO_DIVISION_URL = 'https://i.postimg.cc/HL8DTdsK/logo-DIVIICION-fotor-enhance-2026043071937-fotor-enhance-2026043072020.jpg'
+
+  // Cargar ambas imágenes en paralelo
+  const [logoItssnpBase64, logoDivisionBase64] = await Promise.all([
+    loadImageAsBase64(LOGO_ITSSNP_URL),
+    loadImageAsBase64(LOGO_DIVISION_URL)
+  ])
 
   const pdf = new jsPDF({
     orientation: 'portrait',
@@ -177,35 +199,59 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   const pageWidth  = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
   const margin     = 15
-  let y            = margin
 
-  // ── Encabezado institucional ───────────────────────────
+  /* ══════════════════════════════════════════════════════════
+     ENCABEZADO INSTITUCIONAL CON LOGOS JPG
+     [LOGO ITSSNP - IZQUIERDA] | [TEXTO CENTRAL] | [LOGO DIVISIÓN - DERECHA]
+  ══════════════════════════════════════════════════════════ */
   const addHeader = (doc) => {
     const w = doc.internal.pageSize.getWidth()
-    doc.setFontSize(10)
+    doc.autoTable({
+      startY: 5,
+      body: [[
+        { content: '', styles: { cellWidth: 22, minCellHeight: 22 } },
+        {
+          content: 'Instituto Tecnológico Superior de la Sierra Norte de Puebla\nFORMATO: RESULTADOS DE EVALUACIÓN DE PERSONA TUTORA\nPOR ALUMNO',
+          styles: { halign: 'center', fontStyle: 'bold', fontSize: 9, cellWidth: 'auto', minCellHeight: 22 }
+        },
+        { content: '', styles: { cellWidth: 22, minCellHeight: 22 } },
+      ]],
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, valign: 'middle' },
+      margin: { left: margin, right: margin },
+      tableWidth: w - margin * 2,
+      didDrawCell: (data) => {
+        // Logo ITSSNP a la izquierda
+        if (data.column.index === 0 && data.row.index === 0 && logoItssnpBase64) {
+          doc.addImage(logoItssnpBase64, 'JPEG', data.cell.x + 1, data.cell.y + 1, 20, 20)
+        }
+        // Logo División a la derecha
+        if (data.column.index === 2 && data.row.index === 0 && logoDivisionBase64) {
+          doc.addImage(logoDivisionBase64, 'JPEG', data.cell.x + 1, data.cell.y + 1, 20, 20)
+        }
+      }
+    })
+    const headerBottom = pdf.lastAutoTable.finalY
+    doc.setFontSize(7)
     doc.setFont('helvetica', 'normal')
-    doc.text('Instituto Tecnológico Superior de la Sierra Norte de Puebla', w / 2, 12, { align: 'center' })
-    doc.setFontSize(9)
-    doc.text('FORMATO: RESULTADOS DE EVALUACIÓN DE PERSONA TUTORA', w / 2, 20, { align: 'center' })
-    doc.text('POR ALUMNO', w / 2, 26, { align: 'center' })
-    doc.setFontSize(8)
-    doc.text('Rev. 01 (ITSSNP-AC-PA-03-8)', w - margin, 32, { align: 'right' })
-    return 38
+    doc.text('Rev. 01 (ITSSNP-AC-PA-03-8)', w - margin, headerBottom + 4, { align: 'right' })
+    return headerBottom + 8
   }
 
-  // ── Pie de página numerado ─────────────────────────────
+  /* ── Pie de página ────────────────────────────────────── */
   const addFooter = (doc, pageNum, totalPages) => {
     const w = doc.internal.pageSize.getWidth()
     const h = doc.internal.pageSize.getHeight()
     doc.setFontSize(8)
-    doc.text(`Página ${pageNum} de ${totalPages}`, w - margin, h - 10, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    doc.text('Rev. 01', margin, h - 8)
+    doc.text(`(ITSSNP-AC-PA-03-8)`, w - margin, h - 8, { align: 'right' })
+    doc.text(`Página ${pageNum} de ${totalPages}`, w / 2, h - 8, { align: 'center' })
   }
 
   /* ════════════════════════════════════════════════════════
-     PORTADA  — primera página del documento (sin addPage previo)
+     PORTADA — Primera página del documento
   ════════════════════════════════════════════════════════ */
-  // La instancia jsPDF ya crea una página; sólo la usamos directamente.
-
   pdf.setFontSize(26)
   pdf.setFont('helvetica', 'bold')
   pdf.text('SISTEMA DE EVALUACIÓN', pageWidth / 2, 70, { align: 'center' })
@@ -254,136 +300,131 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   )
 
   /* ════════════════════════════════════════════════════════
-     PÁGINA DE RESULTADOS
+     PÁGINA 2 — Tabla de criterios + Gráfica de barras HORIZONTAL
   ════════════════════════════════════════════════════════ */
   pdf.addPage()
-  let headerHeight = addHeader(pdf)
-  y = headerHeight + 5
+  let y = addHeader(pdf)
 
+  // Tabla de criterios
   const tableData = CATEGORIAS.map((cat, i) => {
     const val   = promediosCat[cat.id] ?? 0
     const cname = clasifFromVal(val)
-    return [i + 1, cat.nombre, val.toFixed(2), cname]
+    return [cat.nombre, val.toFixed(2), cname]
   })
+  // Agregar fila de PROMEDIO al final
+  tableData.push([
+    { content: 'PROMEDIO', styles: { halign: 'right', fontStyle: 'bold' } },
+    promedioGeneral.toFixed(2),
+    clasificacion
+  ])
 
   pdf.autoTable({
     startY: y,
-    head: [['#', 'CRITERIO EVALUADO', 'PUNTAJE', 'CLASIFICACIÓN']],
+    head: [['CRITERIO EVALUADO', 'PUNTAJE', 'CALIFICACIÓN']],
     body: tableData,
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 4, valign: 'middle' },
-    headStyles: { fillColor: [0, 102, 204], textColor: [255, 255, 255], fontSize: 10, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [245, 245, 245] },
+    styles: { fontSize: 9, cellPadding: 3, valign: 'middle' },
+    headStyles: { fillColor: [13, 71, 161], textColor: [255, 255, 255], fontSize: 9, fontStyle: 'bold', halign: 'center' },
     columnStyles: {
-      0: { cellWidth: 12, halign: 'center' },
-      1: { cellWidth: 100 },
-      2: { cellWidth: 20, halign: 'center' },
-      3: { cellWidth: 30, halign: 'center' }
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 22, halign: 'center' },
+      2: { cellWidth: 38, halign: 'center' }
+    },
+    didParseCell: (data) => {
+      if (data.row.index === tableData.length - 1) {
+        data.cell.styles.fontStyle = 'bold'
+      }
     },
     margin: { left: margin, right: margin }
   })
 
-  y = pdf.lastAutoTable.finalY + 10
+  y = pdf.lastAutoTable.finalY + 8
 
-  pdf.setFontSize(12)
-  pdf.setFont('helvetica', 'bold')
-  pdf.text(`PROMEDIO GENERAL: ${promedioGeneral.toFixed(2)} / 5.00`, margin, y)
-  pdf.setFontSize(11)
-  pdf.text(`CLASIFICACIÓN: ${clasificacion}`, margin + 95, y)
-
-  y += 15
-
+  /* ── GRÁFICA DE BARRAS HORIZONTAL (ESTILO DEL 1ER CÓDIGO) ── 
+     Usa los mismos colores y disposición izquierda-derecha  */
   pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
   pdf.text('RESULTADOS REPRESENTADOS CON GRÁFICA', margin, y)
   y += 8
 
-  const chartWidth = pageWidth - margin * 2 - 50
+  const chartWidth = pageWidth - margin * 2 - 40 // ancho para las barras
   const barHeight  = 5
+  const gap        = 2
 
   CATEGORIAS.forEach((cat, i) => {
-    const val          = promediosCat[cat.id] ?? 0
-    const barWidthChart = (val / 5) * chartWidth
+    const val    = promediosCat[cat.id] ?? 0
+    const barW   = (val / 5) * chartWidth
 
-    if (y > pageHeight - 40 && i < CATEGORIAS.length - 1) {
+    // Control de salto de página
+    if (y > pageHeight - 25 && i < CATEGORIAS.length - 1) {
       pdf.addPage()
       y = addHeader(pdf) + 5
     }
 
+    // Número de criterio
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'normal')
     pdf.text(`${i + 1}.`, margin + 2, y + 3)
 
+    // Barra de color (usando CAT_COLORS del código original)
     pdf.setFillColor(CAT_COLORS[i % CAT_COLORS.length])
-    pdf.rect(margin + 12, y, barWidthChart, barHeight, 'F')
+    pdf.rect(margin + 12, y, barW, barHeight, 'F')
 
+    // Valor numérico
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'bold')
-    pdf.text(val.toFixed(1), margin + 12 + barWidthChart + 3, y + 3)
+    pdf.text(val.toFixed(1), margin + 12 + barW + 2, y + 3)
 
-    y += 7
+    y += barHeight + gap
   })
 
   y += 10
 
   /* ════════════════════════════════════════════════════════
-     PÁGINA DE COMENTARIOS + FIRMAS
+     PÁGINA 3 — Comentarios + Firmas C.c.p.
   ════════════════════════════════════════════════════════ */
   pdf.addPage()
-  y = addHeader(pdf) + 5
+  y = addHeader(pdf)
 
-  pdf.setFontSize(11)
+  pdf.setFontSize(10)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('COMENTARIOS DE LA COMUNIDAD ESTUDIANTIL', margin, y)
-  y += 10
+  pdf.text('COMENTARIOS DE LA COMUNIDAD ESTUDIANTIL A QUIEN IMPARTIÓ TUTORÍA', margin, y)
+  y += 8
 
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
 
   if (comentarios && comentarios.length > 0) {
     comentarios.forEach((com) => {
-      const text  = `• "${com.Comentario || com.comentario || 'Sin comentario'}"`
-      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 10)
-      pdf.text(lines, margin + 5, y)
-      y += lines.length * 5 + 5
-
-      if (y > pageHeight - 60) {
+      const texto = com.Comentario || com.comentario || ''
+      if (!texto.trim()) return
+      const text  = `• "${texto}"`
+      const lines = pdf.splitTextToSize(text, pageWidth - margin * 2 - 6)
+      if (y + lines.length * 5 > pageHeight - 55) {
         pdf.addPage()
-        y = addHeader(pdf) + 5
+        y = addHeader(pdf)
       }
+      pdf.text(lines, margin + 3, y)
+      y += lines.length * 5 + 2
     })
   } else {
     pdf.text('No hay comentarios registrados para este tutor(a).', margin, y)
     y += 10
   }
 
-  /* ── Bloque de firmas / C.c.p. ────────────────────────── 
-     Estructura solicitada:
-       Línea 1: C.c.p. [Nombre del tutor].  Personal docente evaluado.
-       Línea 2: [Jefe/a de la carrera a la que pertenece el tutor]
-       Línea 3: Psc. Expediente... (texto institucional)
-       Firma única: M.I.A. Liliana Pérez González
-                    Jefa de Departamento de Desarrollo Académico
-  ─────────────────────────────────────────────────────────── */
-  const signatureAreaY = pageHeight - 50
+  /* ── Bloque de firma ──────────────────────────────────── */
+  const firmaMinY = pageHeight - 55
+  const firmaY    = Math.max(y + 15, firmaMinY)
 
-  // Si el contenido no llega hasta allá, ponemos las firmas al final de la página
-  const firmasY = Math.max(y + 10, signatureAreaY)
-
-  // Si no cabe en la página actual, nueva página
-  if (firmasY > pageHeight - 45) {
+  if (firmaY > pageHeight - 45) {
     pdf.addPage()
-    y = addHeader(pdf) + 5
+    addHeader(pdf)
   }
 
-  const fy = Math.min(firmasY, pageHeight - 48)
-
-  // ── Línea de firma ────────────────────────────────────
+  const fy  = Math.min(firmaY, pageHeight - 48)
+  const sigX = pageWidth / 2
   pdf.setDrawColor(150, 150, 150)
   pdf.setLineWidth(0.3)
-
-  // Firma centrada: M.I.A. Liliana Pérez González
-  const sigX = pageWidth / 2
   pdf.line(sigX - 50, fy, sigX + 50, fy)
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'bold')
@@ -391,26 +432,17 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
   pdf.setFont('helvetica', 'normal')
   pdf.text('Jefa de Departamento de Desarrollo Académico', sigX, fy + 10, { align: 'center' })
 
-  // ── C.c.p. al pie ─────────────────────────────────────
+  // C.c.p. estructura
   const ccpY = pageHeight - 24
   pdf.setFontSize(8)
   pdf.setFont('helvetica', 'bold')
-  pdf.text(`C.c.p. ${tutor.nombre}.`, margin, ccpY)
+  pdf.text(`C.c.p. ${tutor.nombre} – Personal Docente Evaluado`, margin, ccpY)
   pdf.setFont('helvetica', 'normal')
-  pdf.text('Personal docente evaluado.', margin, ccpY + 5)
-  // Jefe/a de la carrera (se usa la división del tutor como referencia)
-  pdf.text(`Jefe(a) de la carrera de ${divisionTutor}.`, margin, ccpY + 10)
+  const jefaDivision = tutor.jefeDivision || `Jefe(a) de División de ${divisionTutor}`
+  pdf.text(`     ${jefaDivision} – Psc.`, margin, ccpY + 5)
+  pdf.text(`     Expediente de material de apoyo de Departamento de Desarrollo Académico`, margin, ccpY + 10)
 
-  // ── Línea institucional Psc. Expediente ───────────────
-  pdf.setFontSize(7.5)
-  pdf.text(
-    'Psc. Expediente de material de apoyo de Departamento de Desarrollo Académico.',
-    pageWidth / 2,
-    pageHeight - 8,
-    { align: 'center' }
-  )
-
-  /* ── Numeración de páginas (omite portada) ────────────── */
+  /* ── Numeración de páginas ───── */
   const pageCount = pdf.internal.getNumberOfPages()
   for (let i = 2; i <= pageCount; i++) {
     pdf.setPage(i)
@@ -419,7 +451,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = []) {
 
   pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
 }
-
 /* ─── Tarjetas de departamentos ──────────────────────────── 
    CORRECCIÓN: se filtra cualquier departamento cuyo nombre sea
    nulo, vacío, o exactamente "SIN NOMBRE" (case-insensitive).

@@ -290,6 +290,31 @@ export async function guardarComentarioAPI(idEvaluacion, idDocente, comentario) 
 }
 
 // ============================================================
+//  NUEVA FUNCIÓN: VERIFICAR ESTADO ACADÉMICO DEL ALUMNO
+//  Detecta bajas y faltas excesivas
+// ============================================================
+
+export async function verificarEstadoAlumnoAPI() {
+  try {
+    const response = await fetch(`${API_URL}/api/alumno/estado`, { headers: getHeaders() })
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Error al verificar estado del alumno')
+    }
+    return await response.json()
+  } catch (error) {
+    // Si hay error en la verificación, permitir acceso por seguridad
+    console.error("Error verificando estado del alumno:", error)
+    return {
+      puedeEvaluar: true,
+      razon: null,
+      mensaje: null,
+      errorVerificacion: true
+    }
+  }
+}
+
+// ============================================================
 //  FUNCIONES PARA ADMIN / DASHBOARD
 // ============================================================
 
@@ -466,3 +491,4 @@ export const getCategorias = getCategoriasAPI
 export const getRubrica = getRubricaAPI
 export const getEscala = getEscalaAPI
 export const yaEvaluado = yaEvaluadoAPI
+export const verificarEstadoAlumno = verificarEstadoAlumnoAPI

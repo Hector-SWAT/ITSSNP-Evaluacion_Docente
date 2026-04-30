@@ -61,6 +61,25 @@ function clasifFromVal(val) {
   return val >= 4.5 ? "EXCELENTE" : val >= 3.5 ? "MUY BUENO" : val >= 2.5 ? "BUENO" : val >= 1.5 ? "REGULAR" : val > 0 ? "DEFICIENTE" : "SIN DATOS"
 }
 
+/* ─── Funciones de validación ──────────────────────────── */
+function esDepartamentoValido(nombre) {
+  if (!nombre) return false
+  const n = String(nombre).trim().toUpperCase()
+  return n !== "" && n !== "SIN NOMBRE" && n !== "SIN DEPARTAMENTO"
+}
+
+function esTutorValido(tutor) {
+  if (!tutor || !tutor.nombre) return false
+  const nombre = String(tutor.nombre).trim()
+  // Excluir nombres vacíos, nulos, o que solo contengan espacios/puntos/guiones
+  return nombre.length > 0 && 
+         nombre !== "." && 
+         nombre !== "-" && 
+         nombre !== "SIN NOMBRE" && 
+         nombre !== "SIN DATOS" &&
+         !/^[\s.\-_]+$/.test(nombre) // No solo caracteres especiales
+}
+
 /* ─── Bar Chart ──────────────────────────────────────────── */
 function BarChart({ datos }) {
   return (
@@ -147,6 +166,7 @@ ${faltantes.map(a=>`<Row>${numCell(a.numControl || a.num_control)}${cell(a.nombr
   a.href = URL.createObjectURL(new Blob([xml], { type:"application/vnd.ms-excel;charset=utf-8;" }))
   a.download = `evaluacion_${tutor.nombre.replace(/\s+/g,"_")}.xls`; a.click()
 }
+
 /* ─── Export PDF ─────────────────────────────────────────── 
    CORRECCIONES:
    1. Departamento usa el nombre del filtro seleccionado en la web (idDepartamento)
@@ -159,8 +179,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
   const { tutor, periodo, promediosCat, promedioGeneral, clasificacion, completaron, faltantes } = resultado
 
   // ── Datos dinámicos del tutor ──────────────────────────
-  // USAR el nombre del departamento seleccionado en el filtro de la web (más completo)
-  // Si no hay filtro, usar los datos del tutor
   const divisionTutor = idDepartamentoSeleccionado || tutor.departamento || tutor.division || tutor.carrera || "Ingeniería"
   const periodoNombre = periodo.Nombre || periodo.nombre || `Periodo ${periodo.id}`
   const grupoAsignado = grupoLabel || tutor.grupo || tutor.Grupo || "Todos los grupos"
@@ -223,11 +241,9 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
       margin: { left: margin, right: margin },
       tableWidth: w - margin * 2,
       didDrawCell: (data) => {
-        // Logo ITSSNP a la izquierda
         if (data.column.index === 0 && data.row.index === 0 && logoItssnpBase64) {
           doc.addImage(logoItssnpBase64, 'JPEG', data.cell.x + 1, data.cell.y + 1, 20, 20)
         }
-        // Logo División a la derecha
         if (data.column.index === 2 && data.row.index === 0 && logoDivisionBase64) {
           doc.addImage(logoDivisionBase64, 'JPEG', data.cell.x + 1, data.cell.y + 1, 20, 20)
         }
@@ -254,10 +270,8 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
   /* ════════════════════════════════════════════════════════
      PORTADA — Primera página (CON LOGOS EN ENCABEZADO)
   ════════════════════════════════════════════════════════ */
-  // Añadir encabezado con logos en la portada
   addHeader(pdf)
   
-  // Posición Y después del encabezado
   let y = 45
 
   pdf.setFontSize(26)
@@ -286,7 +300,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
   pdf.line(pageWidth / 2 - 60, y - 5, pageWidth / 2 + 60, y - 5)
   y += 10
 
-  // ── Datos de portada con el departamento CORRECTO ─────
   pdf.setFontSize(11)
   pdf.setFont('helvetica', 'normal')
   pdf.text(`División Académica / Departamento: ${divisionTutor}`, margin, y)
@@ -307,7 +320,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
     { align: 'right' }
   )
 
-  // ── Pie institucional de portada ───────────────────────
   pdf.setFontSize(8)
   pdf.text(
     'C.c.p. Personal Tutor Evaluado – Jefa de Departamento de Desarrollo Académico – Expediente de material de apoyo',
@@ -316,7 +328,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
     { align: 'center' }
   )
 
-  // ── Pie de página en portada ──────────────────────────
   addFooter(pdf, 1, '?')
 
   /* ════════════════════════════════════════════════════════
@@ -325,7 +336,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
   pdf.addPage()
   y = addHeader(pdf)
 
-  // Tabla de criterios
   const tableData = CATEGORIAS.map((cat, i) => {
     const val   = promediosCat[cat.id] ?? 0
     const cname = clasifFromVal(val)
@@ -461,7 +471,6 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
   for (let i = 1; i <= pageCount; i++) {
     pdf.setPage(i)
     if (i === 1) {
-      // Actualizar portada con número total de páginas
       addFooter(pdf, 1, pageCount)
     } else {
       addFooter(pdf, i, pageCount)
@@ -470,16 +479,8 @@ async function exportarPDF(resultado, grupoLabel, comentarios = [], idDepartamen
 
   pdf.save(`Evaluacion_Tutor_${tutor.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
 }
-/* ─── Tarjetas de departamentos ──────────────────────────── 
-   CORRECCIÓN: se filtra cualquier departamento cuyo nombre sea
-   nulo, vacío, o exactamente "SIN NOMBRE" (case-insensitive).
-──────────────────────────────────────────────────────────── */
-function esDepartamentoValido(nombre) {
-  if (!nombre) return false
-  const n = String(nombre).trim().toUpperCase()
-  return n !== "" && n !== "SIN NOMBRE" && n !== "SIN DEPARTAMENTO"
-}
 
+/* ─── Tarjetas de departamentos ──────────────────────────── */
 function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
   const [deptos,   setDeptos]   = useState([])
   const [loading,  setLoading]  = useState(false)
@@ -584,29 +585,32 @@ function TarjetasDepartamentos({ idPeriodo, onVerTutor }) {
 
               {isExp && (
                 <div style={{ marginTop:10, borderTop:`1px solid ${cs.border}`, paddingTop:10, display:"flex", flexDirection:"column", gap:6 }}>
-                  {[...(d.docentes || [])].sort((a,b) => b.promedio - a.promedio).map((tutor, rank) => {
-                    const dcs      = CLASIF_COLOR[tutor.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
-                    const rankIcon = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank+1}.`
-                    return (
-                      <div key={tutor.id} style={{ background:"#fff", border:"1px solid #e8eeff", borderRadius:8, padding:"8px 10px" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-                          <span style={{ fontSize:rank<3?13:11, fontWeight:800, minWidth:20 }}>{rankIcon}</span>
-                          <span style={{ fontSize:11, fontWeight:700, color:"#0f172a", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{tutor.nombre}</span>
-                          <span style={{ fontSize:13, fontWeight:800, color:dcs.text, flexShrink:0 }}>{tutor.promedio?.toFixed(2)}</span>
+                  {[...(d.docentes || [])]
+                    .filter(tutor => esTutorValido(tutor))
+                    .sort((a,b) => b.promedio - a.promedio)
+                    .map((tutor, rank) => {
+                      const dcs      = CLASIF_COLOR[tutor.clasificacion] ?? CLASIF_COLOR["SIN DATOS"]
+                      const rankIcon = rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank+1}.`
+                      return (
+                        <div key={tutor.id} style={{ background:"#fff", border:"1px solid #e8eeff", borderRadius:8, padding:"8px 10px" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
+                            <span style={{ fontSize:rank<3?13:11, fontWeight:800, minWidth:20 }}>{rankIcon}</span>
+                            <span style={{ fontSize:11, fontWeight:700, color:"#0f172a", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{tutor.nombre}</span>
+                            <span style={{ fontSize:13, fontWeight:800, color:dcs.text, flexShrink:0 }}>{tutor.promedio?.toFixed(2)}</span>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
+                            <span style={{ background:dcs.badge, color:dcs.text, borderRadius:4, padding:"1px 6px", fontSize:9, fontWeight:800, textTransform:"uppercase" }}>{tutor.clasificacion}</span>
+                            <span style={{ fontSize:10, color:"#94a3b8" }}>{tutor.alumnosCompletaron}/{tutor.totalAlumnos} alumnos</span>
+                            <button
+                              onClick={() => onVerTutor(tutor.id)}
+                              style={{ background:"#1e40af", border:"none", borderRadius:5, padding:"3px 8px", fontSize:10, fontWeight:700, color:"#fff", cursor:"pointer" }}
+                            >
+                              Ver →
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
-                          <span style={{ background:dcs.badge, color:dcs.text, borderRadius:4, padding:"1px 6px", fontSize:9, fontWeight:800, textTransform:"uppercase" }}>{tutor.clasificacion}</span>
-                          <span style={{ fontSize:10, color:"#94a3b8" }}>{tutor.alumnosCompletaron}/{tutor.totalAlumnos} alumnos</span>
-                          <button
-                            onClick={() => onVerTutor(tutor.id)}
-                            style={{ background:"#1e40af", border:"none", borderRadius:5, padding:"3px 8px", fontSize:10, fontWeight:700, color:"#fff", cursor:"pointer" }}
-                          >
-                            Ver →
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               )}
             </div>
@@ -649,13 +653,15 @@ export default function Dashboard() {
   const [vistaGraf,  setVistaGraf]  = useState("barras")
   const [tabActivo,  setTabActivo]  = useState("resultados")
 
-  // ── Filtrar tutores sin departamento válido en los selects ──
-  const tutoresValidos     = tutores.filter(t => esDepartamentoValido(t.departamento))
-  const departamentos      = [...new Set(tutoresValidos.map(t => t.departamento))].sort()
-  const tutoresFiltrados   = idDepartamento
+  // ── Filtrar tutores sin departamento válido y sin nombre en los selects ──
+  const tutoresValidos = tutores.filter(t => 
+    esDepartamentoValido(t.departamento) && esTutorValido(t)
+  )
+  const departamentos = [...new Set(tutoresValidos.map(t => t.departamento))].sort()
+  const tutoresFiltrados = idDepartamento
     ? tutoresValidos.filter(t => t.departamento === idDepartamento)
     : tutoresValidos
-  const tutorSeleccionado  = tutores.find(t => String(t.id) === String(idTutor))
+  const tutorSeleccionado = tutores.find(t => String(t.id) === String(idTutor))
 
   const grupoLabel = idGrupo ? (() => {
     const grupo = grupos.find(g => String(g.id) === String(idGrupo))
@@ -675,9 +681,9 @@ export default function Dashboard() {
 
   const recargarDatos = useCallback(async () => {
     try {
-      const tutoresData      = await getDocentesAPI()
-      setTutores(tutoresData)
-      const periodosData     = await getPeriodosAPI()
+      const tutoresData = await getDocentesAPI()
+      setTutores(tutoresData.filter(t => esTutorValido(t)))
+      const periodosData = await getPeriodosAPI()
       const periodosOrdenados = [...periodosData].sort((a, b) => b.id - a.id)
       setPeriodos(periodosOrdenados)
       const activo = periodosOrdenados.find(p => p.activo === 1 || p.activo === true)
@@ -692,7 +698,8 @@ export default function Dashboard() {
     const cargar = async () => {
       try {
         setCargandoTutores(true)
-        setTutores(await getDocentesAPI())
+        const tutoresData = await getDocentesAPI()
+        setTutores(tutoresData.filter(t => esTutorValido(t)))
         setErrorTutores(null)
       } catch (err) {
         setErrorTutores(err.message)
@@ -1181,4 +1188,3 @@ export default function Dashboard() {
     </>
   )
 }
- 

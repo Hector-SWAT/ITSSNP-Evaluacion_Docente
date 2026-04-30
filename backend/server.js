@@ -1250,7 +1250,198 @@ app.get(
     }
   }
 )
+/* ══════════════════════════════════════════════════════════════
+   VERIFICACIÓN DE ESTADO DEL ALUMNO (FALTAS / BAJA)
+   Retorna si el alumno puede o no realizar evaluaciones
+══════════════════════════════════════════════════════════════ */
+app.get("/api/alumno/estado", authMiddleware, async (req, res) => {
+  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
 
+  try {
+    const numControl = req.user.id
+
+    // Obtener periodo activo
+    const periodo = await executeQuerySingle(
+      `SELECT IdPerio FROM dbo.PeriodoEscolar WHERE Situación = 1`
+    )
+    if (!periodo) {
+      return res.json({ 
+        puedeEvaluar: true, 
+        mensaje: null,
+        razon: null 
+      })
+    }
+
+    // Verificar si el alumno está dado de baja (Desertor = 1 en alguna carga)
+    const bajaInfo = await executeQuerySingle(
+      `SELECT TOP 1 ca.Desertor, ca.MotivoBaja, g.Clave AS grupo, m.Nombre AS materia
+       FROM dbo.CargaAlumno ca
+       JOIN dbo.Grupo g ON g.IdGrupo = ca.IdGrupo
+       JOIN dbo.Materia m ON m.IdMate = g.IdMate
+       WHERE ca.NumControl = ? AND ca.Desertor = 1 AND g.IdPerio = ?
+       ORDER BY ca.FechaBaja DESC`,
+      [numControl, periodo.IdPerio]
+    )
+
+    if (bajaInfo) {
+      return res.json({
+        puedeEvaluar: false,
+        razon: "BAJA",
+        mensaje: `No puedes realizar evaluaciones porque estás dado de baja${bajaInfo.MotivoBaja ? ': ' + bajaInfo.MotivoBaja : ''}. Si crees que es un error, contacta a Control Escolar.`,
+        detalle: {
+          tipo: "Baja académica",
+          grupo: bajaInfo.grupo,
+          materia: bajaInfo.materia,
+          motivo: bajaInfo.MotivoBaja || 'No especificado'
+        }
+      })
+    }
+
+    // Verificar faltas excesivas (más del 20% de faltas en al menos una materia)
+    const faltasInfo = await executeQuery(
+      `SELECT g.Clave AS grupo, m.Nombre AS materia, 
+              ca.FaltasTotales AS faltas, ca.CalFinal AS calificacion,
+              CASE 
+                WHEN ca.FaltasTotales > 15 THEN 'CRITICO'
+                WHEN ca.FaltasTotales > 10 THEN 'ALTO'
+                WHEN ca.FaltasTotales > 5 THEN 'MODERADO'
+                ELSE 'NORMAL'
+              END AS nivelFaltas
+       FROM dbo.CargaAlumno ca
+       JOIN dbo.Grupo g ON g.IdGrupo = ca.IdGrupo
+       JOIN dbo.Materia m ON m.IdMate = g.IdMate
+       WHERE ca.NumControl = ? AND ca.Desertor = 0 AND g.IdPerio = ?
+         AND ca.FaltasTotales > 5
+       ORDER BY ca.FaltasTotales DESC`,
+      [numControl, periodo.IdPerio]
+    )
+
+    if (faltasInfo && faltasInfo.length > 0) {
+      // Si hay al menos una materia con nivel CRITICO (más de 15 faltas)
+      const faltasCriticas = faltasInfo.filter(f => f.nivelFaltas === 'CRITICO')
+      
+      if (faltasCriticas.length > 0) {
+        const materiasCriticas = faltasCriticas.map(f => f.materia).join(', ')
+        return res.json({
+          puedeEvaluar: false,
+          razon: "FALTAS_EXCESIVAS",
+          mensaje: `No puedes realizar evaluaciones debido a faltas excesivas (más de 15) en: ${materiasCriticas}. Regulariza tu situación académica.`,
+          detalle: {
+            tipo: "Faltas excesivas",
+            materias: faltasCriticas.map(f => ({
+              materia: f.materia,
+              grupo: f.grupo,
+              faltas: f.faltas
+            }))
+          }
+        })
+      }
+      
+      // Si tiene faltas altas pero no críticas, solo advertir pero permitir
+      return res.json({
+        puedeEvaluar: true,
+        razon: "ADVERTENCIA_FALTAS",
+        mensaje: "Tienes faltas considerables en algunas materias. Te recomendamos regularizar tu situación académica.",
+        advertencia: true,
+        detalle: {
+          tipo: "Advertencia de faltas",
+          materias: faltasInfo.map(f => ({
+            materia: f.materia,
+            grupo: f.grupo,
+            faltas: f.faltas,
+            nivel: f.nivelFaltas
+          }))
+        }
+      })
+    }
+
+    // Todo OK - puede evaluar
+    return res.json({
+      puedeEvaluar: true,
+      razon: null,
+      mensaje: null
+    })
+
+  } catch (err) {
+    console.error("Error verificando estado del alumno:", err)
+    // Por seguridad, si hay error en la verificación, permitir evaluar
+    return res.json({
+      puedeEvaluar: true,
+      razon: null,
+      mensaje: null,
+      errorVerificacion: true
+    })
+  }
+})
+
+/* ══════════════════════════════════════════════════════════════
+   VERIFICACIÓN RÁPIDA AL INICIAR SESIÓN
+   Se ejecuta automáticamente después del login
+══════════════════════════════════════════════════════════════ */
+app.get("/api/alumno/verificar-acceso", authMiddleware, async (req, res) => {
+  if (req.user.tipo !== "alumno") return res.status(403).json({ error: "Acceso denegado" })
+
+  try {
+    const numControl = req.user.id
+    const periodo = await executeQuerySingle(
+      `SELECT IdPerio, Nombre FROM dbo.PeriodoEscolar WHERE Situación = 1`
+    )
+
+    if (!periodo) {
+      return res.json({
+        acceso: true,
+        bloqueado: false,
+        mensaje: "No hay periodo activo"
+      })
+    }
+
+    // Verificar bajas
+    const baja = await executeQuerySingle(
+      `SELECT COUNT(*) AS total FROM dbo.CargaAlumno 
+       WHERE NumControl = ? AND Desertor = 1 AND IdGrupo IN 
+         (SELECT IdGrupo FROM dbo.Grupo WHERE IdPerio = ?)`,
+      [numControl, periodo.IdPerio]
+    )
+
+    // Verificar faltas críticas
+    const faltasCriticas = await executeQuerySingle(
+      `SELECT COUNT(*) AS total FROM dbo.CargaAlumno 
+       WHERE NumControl = ? AND Desertor = 0 AND FaltasTotales > 15
+         AND IdGrupo IN (SELECT IdGrupo FROM dbo.Grupo WHERE IdPerio = ?)`,
+      [numControl, periodo.IdPerio]
+    )
+
+    const estaBloqueado = (baja?.total > 0) || (faltasCriticas?.total > 0)
+    const razonBloqueo = baja?.total > 0 
+      ? 'Estás dado de baja en al menos una materia este periodo.'
+      : faltasCriticas?.total > 0
+        ? 'Tienes más de 15 faltas en al menos una materia.'
+        : null
+
+    return res.json({
+      acceso: !estaBloqueado,
+      bloqueado: estaBloqueado,
+      razon: razonBloqueo,
+      periodo: periodo.Nombre,
+      detalle: {
+        tieneBajas: baja?.total > 0,
+        totalBajas: baja?.total || 0,
+        tieneFaltasCriticas: faltasCriticas?.total > 0,
+        totalFaltasCriticas: faltasCriticas?.total || 0
+      }
+    })
+
+  } catch (err) {
+    console.error("Error en verificación de acceso:", err)
+    // Si hay error, permitir acceso por seguridad
+    return res.json({
+      acceso: true,
+      bloqueado: false,
+      error: true,
+      mensaje: "No se pudo verificar el estado académico"
+    })
+  }
+})
 /* ══════════════════════════════════════════════════════════════
    EXPORTAR — Requerido por Vercel (@vercel/node)
 ══════════════════════════════════════════════════════════════ */

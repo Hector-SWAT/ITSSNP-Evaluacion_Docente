@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
-import { getPerfilAlumnoAPI, getEvaluacionesAlumnoAPI } from "../services/evaluacionData"
+import { getPerfilAlumnoAPI, getEvaluacionesAlumnoAPI, verificarEstadoAlumnoAPI } from "../services/evaluacionData"
 
 const ASSETS = {
   logoITSSNP: "https://i.postimg.cc/YhqbKr76/logo-itssnp.png",
@@ -31,6 +31,12 @@ export default function PanelAlumno() {
   const [refresc, setRefresc] = useState(0)
   const [logoITSSNPFail, setLogoITSSNPFail] = useState(false)
   const [logoTECNMFail, setLogoTECNMFail] = useState(false)
+  
+  // Estados para verificación de estado académico
+  const [estadoAlumno, setEstadoAlumno] = useState(null)
+  const [bloqueado, setBloqueado] = useState(false)
+  const [mensajeBloqueo, setMensajeBloqueo] = useState("")
+  const [cargandoEstado, setCargandoEstado] = useState(true)
 
   const yaEvaluado = (idTutor) =>
     evaluaciones.some(e => e.idTutor === idTutor && e.completada === true)
@@ -53,7 +59,21 @@ export default function PanelAlumno() {
     if (!user) return
     const cargarDatos = async () => {
       setLoading(true)
+      setCargandoEstado(true)
       try {
+        // Verificar estado del alumno primero
+        const estado = await verificarEstadoAlumnoAPI()
+        setEstadoAlumno(estado)
+        
+        if (!estado.puedeEvaluar) {
+          setBloqueado(true)
+          setMensajeBloqueo(estado.mensaje || "No puedes realizar evaluaciones en este momento.")
+          setCargandoEstado(false)
+          setLoading(false)
+          return // No cargar más datos si está bloqueado
+        }
+        
+        // Si puede evaluar, cargar el resto de datos
         const datosPerfil = await getPerfilAlumnoAPI()
         setPerfil(datosPerfil)
         const datosEval = await getEvaluacionesAlumnoAPI()
@@ -62,6 +82,7 @@ export default function PanelAlumno() {
         console.error("❌ Error cargando datos:", error)
       } finally {
         setLoading(false)
+        setCargandoEstado(false)
       }
     }
     cargarDatos()
@@ -79,6 +100,149 @@ export default function PanelAlumno() {
   const tutorCompletado = tutor ? yaEvaluado(tutor.id) : false
   const tutorDisponible = tutor ? estaDisponible(configuracion.fechaInicioTutor, configuracion.fechaFinTutor) : false
   const hayEvaluacionesActivas = configuracion.tutorActivo && tutor && tutorDisponible
+
+  /* ──────────────── PANTALLA DE BLOQUEO ──────────────── */
+  if (bloqueado && !cargandoEstado) {
+    return (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+
+        <style>{`
+          *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+          html, body, #root { height: 100%; }
+          
+          @keyframes fadeUp {
+            from { opacity:0; transform:translateY(20px); }
+            to   { opacity:1; transform:translateY(0); }
+          }
+          
+          .bloqueo-root {
+            font-family: 'DM Sans', sans-serif;
+            min-height: 100dvh;
+            background: linear-gradient(135deg, #0b1f4a 0%, #1648b8 55%, #0b7ec9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+          
+          .bloqueo-card {
+            background: white;
+            border-radius: 24px;
+            padding: 48px 40px;
+            max-width: 520px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+            animation: fadeUp 0.45s ease both;
+          }
+          
+          .bloqueo-icon {
+            font-size: 64px;
+            margin-bottom: 24px;
+            display: block;
+          }
+          
+          .bloqueo-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 16px;
+            line-height: 1.3;
+          }
+          
+          .bloqueo-message {
+            font-size: 15px;
+            color: #64748b;
+            line-height: 1.7;
+            margin-bottom: 32px;
+            background: #fef2f2;
+            border: 1.5px solid #fecaca;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: left;
+          }
+
+          .bloqueo-detalle {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+            text-align: left;
+            font-size: 13px;
+            color: #475569;
+          }
+
+          .bloqueo-detalle-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+          }
+
+          .bloqueo-detalle-item:last-child {
+            border-bottom: none;
+          }
+
+          .bloqueo-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 32px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+
+          .bloqueo-btn:hover {
+            background: #b91c1c;
+            transform: translateY(-2px);
+          }
+        `}</style>
+
+        <div className="bloqueo-root">
+          <div className="bloqueo-card">
+            <span className="bloqueo-icon">🚫</span>
+            <h2 className="bloqueo-title">Acceso Restringido</h2>
+            
+            <div className="bloqueo-message">
+              <p style={{ fontWeight: 600, marginBottom: 8 }}>⚠️ {mensajeBloqueo}</p>
+              {estadoAlumno?.razon === "BAJA" && (
+                <p style={{ fontSize: 13, marginTop: 8 }}>
+                  📋 Tipo: {estadoAlumno.detalle?.tipo}<br />
+                  📚 Materia: {estadoAlumno.detalle?.materia}<br />
+                  👥 Grupo: {estadoAlumno.detalle?.grupo}
+                </p>
+              )}
+              {estadoAlumno?.razon === "FALTAS_EXCESIVAS" && (
+                <div style={{ fontSize: 13, marginTop: 8 }}>
+                  <p style={{ marginBottom: 4 }}>📊 Materias con faltas críticas:</p>
+                  {estadoAlumno.detalle?.materias?.map((m, i) => (
+                    <div key={i} style={{ marginLeft: 16, marginTop: 4 }}>
+                      • {m.materia} ({m.grupo}) - {m.faltas} faltas
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 24 }}>
+              Si crees que esto es un error, contacta a Control Escolar para regularizar tu situación.
+            </p>
+
+            <button className="bloqueo-btn" onClick={logout}>
+              Cerrar sesión
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   /* ──────────────── PANTALLA DE CARGA ──────────────── */
   if (loading) {
@@ -198,7 +362,7 @@ export default function PanelAlumno() {
             margin: '0 auto 14px'
           }} />
           <p style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>
-            Cargando tu información...
+            Verificando tu estado académico...
           </p>
         </div>
 
@@ -307,6 +471,18 @@ export default function PanelAlumno() {
           padding: clamp(24px,4vw,48px) clamp(16px,4vw,48px);
           max-width: 1200px; width: 100%; margin: 0 auto;
           display: flex; flex-direction: column; gap: 24px;
+        }
+
+        /* ADVERTENCIA */
+        .pa-advertencia {
+          background: #fffbeb;
+          border: 1.5px solid #fcd34d;
+          border-radius: 12px;
+          padding: 16px 20px;
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          animation: fadeUp 0.4s ease both;
         }
 
         /* HERO */
@@ -504,6 +680,21 @@ export default function PanelAlumno() {
         </nav>
 
         <div className="pa-body">
+
+          {/* ── Advertencia de faltas (si aplica) ── */}
+          {estadoAlumno?.advertencia && (
+            <div className="pa-advertencia">
+              <span style={{ fontSize: '24px' }}>⚠️</span>
+              <div>
+                <p style={{ fontWeight: 700, color: '#b45309', marginBottom: '4px' }}>
+                  Advertencia Académica
+                </p>
+                <p style={{ fontSize: '13px', color: '#92400e' }}>
+                  {estadoAlumno.mensaje}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ── Hero ── */}
           <div className="pa-hero">
